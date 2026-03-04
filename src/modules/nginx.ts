@@ -6,6 +6,7 @@ export async function ensureAppNginx(
   app: string,
   nginx: Record<string, string | number>
 ): Promise<void> {
+  logAction(app, 'Configuring nginx')
   const current = await exportAppNginx(runner, app) ?? {}
   let changed = false
 
@@ -17,6 +18,9 @@ export async function ensureAppNginx(
 
   if (changed) {
     await runner.run('proxy:build-config', app)
+    logDone()
+  } else {
+    logSkip()
   }
 }
 

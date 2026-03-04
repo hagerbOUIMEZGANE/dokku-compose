@@ -7,7 +7,7 @@ export async function ensureAppGit(
   app: string,
   git: GitConfig
 ): Promise<void> {
-  logAction(app, 'Initializing git')
+  logAction(app, 'Ensuring git')
   await runner.run('git:initialize', app)
   if (git.deploy_branch) {
     await runner.run('git:set', app, 'deploy-branch', git.deploy_branch)
