@@ -16,6 +16,7 @@ import { ensureAppRegistry } from '../modules/registry.js'
 import { ensureAppScheduler } from '../modules/scheduler.js'
 import { ensureAppConfig, ensureGlobalConfig } from '../modules/config.js'
 import { ensureAppBuilder } from '../modules/builder.js'
+import { ensureAppGit } from '../modules/git.js'
 import { ensureAppDockerOptions } from '../modules/docker-options.js'
 
 export async function runUp(
@@ -63,6 +64,8 @@ export async function runUp(
     if (appConfig.scheduler) await ensureAppScheduler(runner, app, appConfig.scheduler)
     if (appConfig.env !== undefined) await ensureAppConfig(runner, app, appConfig.env)
     if (appConfig.build) await ensureAppBuilder(runner, app, appConfig.build)
+    const gitConfig = appConfig.git ?? config.git
+    if (gitConfig) await ensureAppGit(runner, app, gitConfig)
     if (appConfig.docker_options) await ensureAppDockerOptions(runner, app, appConfig.docker_options)
   }
 }
