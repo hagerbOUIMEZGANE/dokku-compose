@@ -493,6 +493,24 @@ describe('reconcile', () => {
     expect(change.removed).toEqual(['old-prop'])
   })
 
+  it('always calls onChange when forceApply is true', async () => {
+    const ctx = makeCtx()
+    const onChange = vi.fn()
+    const read = vi.fn()
+    const resource: Resource<{ build: string[] }> = {
+      key: 'docker_options',
+      forceApply: true,
+      read,
+      onChange,
+    }
+
+    await reconcile(resource, ctx, 'myapp', { build: ['--shm-size=256m'] })
+
+    expect(read).not.toHaveBeenCalled()  // read is skipped
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange.mock.calls[0][2].after).toEqual({ build: ['--shm-size=256m'] })
+  })
+
   it('logs action and result via logger', async () => {
     const ctx = makeCtx()
     const resource: Resource<string> = {
@@ -525,6 +543,8 @@ export interface Resource<T = unknown> {
   key: string
   read: (ctx: Context, target: string) => Promise<T>
   onChange: (ctx: Context, target: string, change: any) => void | Promise<void>
+  /** Skip diff, always call onChange. For resources without parseable reports. */
+  forceApply?: boolean
 }
 
 export async function reconcile<T>(
@@ -534,14 +554,20 @@ export async function reconcile<T>(
   desired: T | undefined
 ): Promise<void> {
   if (desired === undefined) return
+  logAction(target, `${resource.key}`)
+
+  if (resource.forceApply) {
+    await resource.onChange(ctx, target, { before: undefined, after: desired, changed: true })
+    logDone()
+    return
+  }
+
   const before = await resource.read(ctx, target)
   const change = computeChange(before, desired)
   if (!change.changed) {
-    logAction(target, `${resource.key}`)
     logSkip()
     return
   }
-  logAction(target, `${resource.key}`)
   await resource.onChange(ctx, target, change)
   logDone()
 }
@@ -685,9 +711,88 @@ describe('Registry resource', () => {
 })
 ```
 
+Also add parser-specific tests with real Dokku output samples in a separate file:
+
+```typescript
+// src/resources/parsers.test.ts
+import { describe, it, expect } from 'vitest'
+import { parseReport } from './parsers.js'
+
+describe('parseReport', () => {
+  it('parses nginx report format', () => {
+    // Real output from dokku nginx:report myapp
+    const raw = `=====> myapp nginx information
+       Nginx access log format:
+       Nginx access log path:           /var/log/nginx/myapp-access.log
+       Nginx bind address IPv4:
+       Nginx bind address IPv6:         ::
+       Nginx client max body size:      1m
+       Nginx disable custom config:     false
+       Nginx error log path:            /var/log/nginx/myapp-error.log
+       Nginx global hsts:               true
+       Nginx hsts:                       true
+       Nginx hsts include subdomains:   true
+       Nginx hsts max age:              15724800
+       Nginx hsts preload:              false
+       Nginx last visited at:           1709561234
+       Nginx proxy buffer size:         4096
+       Nginx proxy buffering:           on
+       Nginx proxy buffers:             8 4096
+       Nginx proxy read timeout:        60s`
+    const result = parseReport(raw, 'nginx')
+    expect(result['client-max-body-size']).toBe('1m')
+    expect(result['proxy-read-timeout']).toBe('60s')
+    expect(result['hsts']).toBe('true')
+    // Should skip computed/meta keys
+    expect(result['last-visited-at']).toBeUndefined()
+    // Should skip empty values
+    expect(result['access-log-format']).toBeUndefined()
+    expect(result['bind-address-ipv4']).toBeUndefined()
+  })
+
+  it('parses scheduler report format', () => {
+    const raw = `=====> myapp scheduler information
+       Scheduler computed selected:     docker-local
+       Scheduler global selected:       docker-local
+       Scheduler selected:              docker-local`
+    const result = parseReport(raw, 'scheduler')
+    expect(result['selected']).toBe('docker-local')
+    // Should skip computed/global keys
+    expect(result['computed-selected']).toBeUndefined()
+    expect(result['global-selected']).toBeUndefined()
+  })
+
+  it('parses logs report format', () => {
+    const raw = `=====> myapp logs information
+       Logs computed max size:          10m
+       Logs global max size:
+       Logs max size:                   10m
+       Logs computed vector sink:
+       Logs global vector sink:
+       Logs vector sink:`
+    const result = parseReport(raw, 'logs')
+    expect(result['max-size']).toBe('10m')
+    expect(result['computed-max-size']).toBeUndefined()
+  })
+
+  it('handles header line gracefully', () => {
+    const raw = `=====> myapp nginx information
+       Nginx client max body size:      50m`
+    const result = parseReport(raw, 'nginx')
+    expect(result['client-max-body-size']).toBe('50m')
+    // Header line should not appear as a key
+    expect(Object.keys(result)).not.toContain('=====> myapp nginx information')
+  })
+
+  it('returns empty object for empty input', () => {
+    expect(parseReport('', 'nginx')).toEqual({})
+  })
+})
+```
+
 **Step 2: Run test to verify it fails**
 
-Run: `bun test src/resources/properties.test.ts`
+Run: `bun test src/resources/parsers.test.ts src/resources/properties.test.ts`
 Expected: FAIL — modules not found
 
 **Step 3: Write implementation**
@@ -796,7 +901,7 @@ Expected: PASS (all tests)
 **Step 5: Commit**
 
 ```bash
-git add src/resources/parsers.ts src/resources/properties.ts src/resources/properties.test.ts
+git add src/resources/parsers.ts src/resources/parsers.test.ts src/resources/properties.ts src/resources/properties.test.ts
 git commit -m "feat: add property-based resources (nginx, logs, registry, scheduler)"
 ```
 
@@ -1223,15 +1328,10 @@ import type { Resource } from '../core/reconcile.js'
 
 type DockerOpts = { build?: string[]; deploy?: string[]; run?: string[] }
 
-// ALWAYS-APPLY: Docker options lack a clean report format for diffing.
-// read() returns empty so computeChange always detects a diff.
-// This means docker-options are re-applied every run (clear + add),
-// which is safe because the operation is idempotent.
 export const DockerOptions: Resource<DockerOpts> = {
   key: 'docker_options',
-  read: async () => {
-    return {} as DockerOpts
-  },
+  forceApply: true,
+  read: async () => ({} as DockerOpts),
   onChange: async (ctx, target, { after }: { after: DockerOpts }) => {
     for (const phase of ['build', 'deploy', 'run'] as const) {
       const opts = after[phase]
@@ -1256,13 +1356,10 @@ type BuildConfig = {
   args?: Record<string, string>
 }
 
-// ALWAYS-APPLY: Builder spans multiple Dokku namespaces (builder-dockerfile,
-// app-json, builder, docker-options) with no unified report. Re-applies every run.
 export const Builder: Resource<BuildConfig> = {
   key: 'build',
-  read: async () => {
-    return {} as BuildConfig
-  },
+  forceApply: true,
+  read: async () => ({} as BuildConfig),
   onChange: async (ctx, target, { after }: { after: BuildConfig }) => {
     if (after.dockerfile)
       await ctx.run('builder-dockerfile:set', target, 'dockerfile-path', after.dockerfile)
@@ -1310,13 +1407,10 @@ type ChecksConfig = false | {
   [key: string]: string | number | boolean | string[] | undefined
 }
 
-// ALWAYS-APPLY: Checks report format is not cleanly parseable for diffing.
-// Re-applies every run. Safe because checks:set is idempotent.
 export const Checks: Resource<ChecksConfig> = {
   key: 'checks',
-  read: async () => {
-    return {} as ChecksConfig
-  },
+  forceApply: true,
+  read: async () => ({} as ChecksConfig),
   onChange: async (ctx, target, { after }: Change<ChecksConfig>) => {
     if (after === false) {
       await ctx.run('checks:disable', target)
@@ -1482,33 +1576,24 @@ import { Checks } from './checks.js'
 import { Networks, NetworkProps } from './network.js'
 import type { Resource } from '../core/reconcile.js'
 
-// Ordered list of per-app resources — execution order matters
-export const APP_RESOURCES: Resource[] = [
-  Apps,
-  Domains,
-  // Links handled separately (cross-resource dependency)
-  Networks,
-  NetworkProps,
-  Proxy,
-  Ports,
-  Certs,
-  Storage,
-  Nginx,
-  Checks,
-  Logs,
-  Registry,
-  Scheduler,
-  Config,
-  Builder,
-  Git,
-  DockerOptions,
+// Per-app resources split into explicit phases.
+// Links are NOT in any phase — handled explicitly between
+// NETWORKING and CONFIG because they depend on services (Phase 1).
+export const NETWORKING_RESOURCES: Resource[] = [
+  Domains, Networks, NetworkProps, Proxy, Ports,
 ]
 
-export const GLOBAL_RESOURCES: Resource[] = [
-  Domains,
-  Config,
-  Logs,
-  Nginx,
+export const CONFIG_RESOURCES: Resource[] = [
+  Certs, Storage, Nginx, Checks, Logs, Registry, Scheduler, Config,
+]
+
+export const BUILD_RESOURCES: Resource[] = [
+  Builder, Git, DockerOptions,
+]
+
+// All per-app resources (for export and diff iteration)
+export const ALL_APP_RESOURCES: Resource[] = [
+  ...NETWORKING_RESOURCES, ...CONFIG_RESOURCES, ...BUILD_RESOURCES,
 ]
 
 export {
@@ -1525,8 +1610,10 @@ Rewrite `src/commands/up.ts`:
 import type { Context } from '../core/context.js'
 import type { Config as ConfigType } from '../core/schema.js'
 import { reconcile } from '../core/reconcile.js'
-import { APP_RESOURCES } from '../resources/index.js'
-import { Apps } from '../resources/lifecycle.js'
+import {
+  NETWORKING_RESOURCES, CONFIG_RESOURCES, BUILD_RESOURCES,
+  Apps, Git,
+} from '../resources/index.js'
 import { ensurePlugins } from '../modules/plugins.js'
 import { ensureNetworks } from '../modules/network.js'
 import { ensureServices, ensureServiceBackups, ensureAppLinks } from '../modules/services.js'
@@ -1540,51 +1627,47 @@ export async function runUp(
     ? appFilter
     : Object.keys(config.apps)
 
-  // Phase 1: Plugins (stays custom — install + version logic)
+  // Phase 1: Infrastructure
+  // Custom functions take ctx.runner for now. These are candidates for
+  // Context migration in a follow-up (for caching benefits), but Runner
+  // passthrough is intentional here to keep this refactor scoped.
   if (config.plugins) await ensurePlugins(ctx.runner, config.plugins)
-
-  // Phase 2: Global config
   // TODO: wire global resources in a follow-up
-
-  // Phase 3: Networks (stays custom — create lifecycle)
   if (config.networks) await ensureNetworks(ctx.runner, config.networks)
-
-  // Phase 4: Services (stays custom — multi-step lifecycle)
   if (config.services) await ensureServices(ctx.runner, config.services)
   if (config.services) await ensureServiceBackups(ctx.runner, config.services)
 
-  // Phase 5: Per-app — generic reconcile loop
+  // Phase 2: Per-app
   for (const app of apps) {
     const appConfig = config.apps[app]
     if (!appConfig) continue
 
-    // App creation
+    // 2a: Lifecycle
     await reconcile(Apps, ctx, app, true)
 
-    // Domains
-    await reconcile(APP_RESOURCES.find(r => r.key === 'domains')!, ctx, app, appConfig.domains)
+    // 2b: Networking
+    for (const resource of NETWORKING_RESOURCES) {
+      await reconcile(resource, ctx, app, (appConfig as any)[resource.key])
+    }
 
-    // Links (custom — cross-resource dependency on services).
-    // ORDERING: Links depend on services existing (Phase 4 above).
-    // This must run after Phase 4 and after app creation. Do not
-    // move into the generic resource loop without preserving this.
+    // Links — between networking and config because they depend on
+    // services existing (Phase 1) and app existing (2a).
     if (config.services) {
       await ensureAppLinks(ctx.runner, app, appConfig.links ?? [], config.services)
     }
 
-    // All other resources via registry
-    // git is handled explicitly below (merges app-level with global config)
-    const skipKeys = new Set(['_app', 'domains', 'git'])
-    for (const resource of APP_RESOURCES) {
-      if (skipKeys.has(resource.key)) continue
-      const desired = (appConfig as any)[resource.key]
-      await reconcile(resource, ctx, app, desired)
+    // 2c: Configuration
+    for (const resource of CONFIG_RESOURCES) {
+      await reconcile(resource, ctx, app, (appConfig as any)[resource.key])
     }
 
-    // Git: merge app-level with global
-    const gitConfig = appConfig.git ?? config.git
-    if (gitConfig) {
-      await reconcile(APP_RESOURCES.find(r => r.key === 'git')!, ctx, app, gitConfig)
+    // 2d: Build (git merges app-level with global)
+    for (const resource of BUILD_RESOURCES) {
+      if (resource.key === 'git') {
+        await reconcile(resource, ctx, app, appConfig.git ?? config.git)
+      } else {
+        await reconcile(resource, ctx, app, (appConfig as any)[resource.key])
+      }
     }
   }
 }
@@ -1654,7 +1737,7 @@ Expected: FAIL (export.ts takes Runner, not Context)
 // src/commands/export.ts
 import type { Context } from '../core/context.js'
 import type { Config } from '../core/schema.js'
-import { APP_RESOURCES } from '../resources/index.js'
+import { ALL_APP_RESOURCES } from '../resources/index.js'
 import { exportApps } from '../modules/apps.js'
 import { exportServices, exportAppLinks } from '../modules/services.js'
 import { exportNetworks } from '../modules/network.js'
@@ -1682,7 +1765,7 @@ export async function runExport(ctx: Context, opts: ExportOptions): Promise<Conf
     const appConfig: Config['apps'][string] = {}
 
     // Read each resource and populate if non-empty
-    for (const resource of APP_RESOURCES) {
+    for (const resource of ALL_APP_RESOURCES) {
       if (resource.key.startsWith('_')) continue  // skip internal keys like _app
       const value = await resource.read(ctx, app)
       if (value !== undefined && value !== null && value !== '' &&
@@ -1739,7 +1822,7 @@ export async function computeDiff(ctx: Context, config: Config): Promise<DiffRes
   for (const [app, appConfig] of Object.entries(config.apps)) {
     const appDiff: AppDiff = {}
 
-    for (const resource of APP_RESOURCES) {
+    for (const resource of ALL_APP_RESOURCES) {
       if (resource.key.startsWith('_')) continue
       const desired = (appConfig as any)[resource.key]
       if (desired === undefined) continue
@@ -1883,57 +1966,67 @@ git commit -m "feat: update CLI and down command to use Context"
 
 ---
 
-### Task 10: Remove old module files
+### Task 10: Remove old module files incrementally
 
-Now that resources handle everything, remove the old per-module ensure/export files that are fully replaced. Keep modules that still have custom logic used directly (plugins.ts, services.ts, apps.ts for exportApps).
+Delete old modules in groups, verifying after each group that nothing breaks. Keep modules that still have custom logic (plugins.ts, services.ts, apps.ts for exportApps, network.ts for ensureNetworks/exportNetworks).
 
-**Files to delete:**
-- `src/modules/nginx.ts` → replaced by `src/resources/properties.ts`
-- `src/modules/logs.ts` → replaced by `src/resources/properties.ts`
-- `src/modules/registry.ts` → replaced by `src/resources/properties.ts`
-- `src/modules/scheduler.ts` → replaced by `src/resources/properties.ts`
-- `src/modules/ports.ts` → replaced by `src/resources/lists.ts`
-- `src/modules/domains.ts` → replaced by `src/resources/lists.ts`
-- `src/modules/storage.ts` → replaced by `src/resources/lists.ts`
-- `src/modules/proxy.ts` → replaced by `src/resources/toggle.ts`
-- `src/modules/certs.ts` → replaced by `src/resources/certs.ts`
-- `src/modules/config.ts` → replaced by `src/resources/config.ts`
-- `src/modules/docker-options.ts` → replaced by `src/resources/docker-options.ts`
-- `src/modules/builder.ts` → replaced by `src/resources/builder.ts`
-- `src/modules/git.ts` → replaced by `src/resources/git.ts`
-- `src/modules/checks.ts` → replaced by `src/resources/checks.ts`
-- `src/modules/network.ts` → keep `ensureNetworks` and `exportNetworks` (top-level network create), move rest to resource
-
-**Also delete old test files** that are replaced by resource tests:
-- `src/modules/nginx.test.ts`, `src/modules/ports.test.ts`, `src/modules/config.test.ts`, etc.
-
-**Step 1: Verify no remaining imports of old modules**
-
-Run: `grep -r "from '../modules/" src/commands/ src/resources/` — should only reference `plugins.js`, `services.js`, `apps.js`, `network.js` (for ensureNetworks/exportNetworks).
-
-**Step 2: Delete replaced files**
+**Step 1: Remove property-based modules (replaced by Task 4)**
 
 ```bash
-rm src/modules/nginx.ts src/modules/logs.ts src/modules/registry.ts src/modules/scheduler.ts
-rm src/modules/ports.ts src/modules/domains.ts src/modules/storage.ts
-rm src/modules/proxy.ts src/modules/certs.ts src/modules/config.ts
-rm src/modules/docker-options.ts src/modules/builder.ts src/modules/git.ts src/modules/checks.ts
-# Delete corresponding test files
-rm src/modules/nginx.test.ts src/modules/ports.test.ts src/modules/config.test.ts
-# (delete any other *.test.ts files for removed modules)
+rm src/modules/nginx.ts src/modules/nginx.test.ts
+rm src/modules/logs.ts
+rm src/modules/registry.ts
+rm src/modules/scheduler.ts src/modules/scheduler.test.ts
 ```
 
-**Step 3: Run full test suite**
-
 Run: `bun test`
-Expected: PASS (only resource tests + command tests remain)
-
-**Step 4: Commit**
+Expected: PASS
 
 ```bash
 git add -A
-git commit -m "refactor: remove old per-module files replaced by resource definitions"
+git commit -m "refactor: remove old property modules (nginx, logs, registry, scheduler)"
 ```
+
+**Step 2: Remove list-based modules (replaced by Task 5)**
+
+```bash
+rm src/modules/ports.ts src/modules/ports.test.ts
+rm src/modules/domains.ts src/modules/domains.test.ts
+rm src/modules/storage.ts src/modules/storage.test.ts
+```
+
+Run: `bun test`
+Expected: PASS
+
+```bash
+git add -A
+git commit -m "refactor: remove old list modules (ports, domains, storage)"
+```
+
+**Step 3: Remove remaining modules (replaced by Task 6)**
+
+```bash
+rm src/modules/proxy.ts src/modules/proxy.test.ts
+rm src/modules/certs.ts src/modules/certs.test.ts
+rm src/modules/config.ts src/modules/config.test.ts
+rm src/modules/docker-options.ts
+rm src/modules/builder.ts
+rm src/modules/git.ts
+rm src/modules/checks.ts src/modules/checks.test.ts
+```
+
+Run: `bun test`
+Expected: PASS
+
+```bash
+git add -A
+git commit -m "refactor: remove old toggle/lifecycle/config/build modules"
+```
+
+**Step 4: Verify no remaining imports of deleted modules**
+
+Run: `grep -r "from '../modules/" src/commands/ src/resources/`
+Expected: only `plugins.js`, `services.js`, `apps.js`, `network.js` (for ensureNetworks/exportNetworks)
 
 ---
 

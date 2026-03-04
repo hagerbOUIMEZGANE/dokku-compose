@@ -25,26 +25,27 @@ Wraps the runner with cached queries and a command recorder.
 ```typescript
 interface Context {
   // Queries — cached per command string
-  report(namespace: string, ...args: string[]): Promise<Record<string, string>>
   query(...args: string[]): Promise<string>
   check(...args: string[]): Promise<boolean>
-  exportMap(namespace: string, app: string): Promise<Record<string, string>>
 
   // Mutations — always appends to commands[], also executes unless dry-run
   run(...args: string[]): void
 
   // Recorded command log (serves both dry-run display and down/diff)
-  commands: string[]
+  commands: string[][]
+
+  // The underlying runner (for close(), passthrough to custom functions)
+  runner: Runner
 }
 ```
 
-The cache is keyed by the full command string (e.g. `"nginx:report myapp"`). First call hits Dokku over SSH. Subsequent calls return the cached result. This eliminates redundant round trips when multiple fields come from the same report.
+The cache is keyed by the full command string (e.g. `"nginx:report\0myapp"`). First call hits Dokku over SSH. Subsequent calls return the cached result. This eliminates redundant round trips when multiple fields come from the same report.
 
 In dry-run mode, `run()` records but does not execute. In live mode, it does both. The onChange handler doesn't know or care which mode it's in.
 
 #### Change Types
 
-One generic `computeChange()` function examines the types and computes everything upfront:
+One generic `computeChange()` function examines the types and computes everything upfront. Uses overloads for proper type narrowing at call sites:
 
 ```typescript
 // Scalar (string, number, boolean)
@@ -66,162 +67,31 @@ interface MapChange extends Change<Record<string, string>> {
   removed: string[]
   modified: Record<string, string>
 }
+
+// Overloads
+function computeChange(before: string[], after: string[]): ListChange
+function computeChange(before: Record<string, string>, after: Record<string, string>): MapChange
+function computeChange<T>(before: T, after: T): Change<T>
 ```
-
-`computeChange(before, after)` detects the type and returns the appropriate variant:
-
-- Arrays → `ListChange` with added/removed (order-insensitive set comparison)
-- Objects → `MapChange` with added/removed/modified
-- Scalars → `Change` with simple equality
 
 Resources don't implement their own diff. They receive a precomputed change object and pick the fields they need.
 
 #### Resource Definition
 
-Each resource is a plain object with a key, read function, and onChange handler:
+Each resource is a plain object with a key, read function, onChange handler, and an optional `forceApply` flag:
 
 ```typescript
 interface Resource<T> {
   key: string                                          // YAML path (e.g. "nginx", "ports")
-  scope: "app" | "global" | "both"
-  read: (ctx: Context, target: string) => Promise<T>   // target is app name or "global"
-  onChange: (ctx: Context, target: string, change: Change<T>) => void
+  read: (ctx: Context, target: string) => Promise<T>   // target is app name or "--global"
+  onChange: (ctx: Context, target: string, change: Change<T>) => void | Promise<void>
+  forceApply?: boolean                                 // skip diff, always call onChange
 }
 ```
 
-### Resource Definitions
+**`forceApply`**: Some Dokku namespaces (docker-options, builder, checks) don't have a report format that can be cleanly parsed for diffing. Rather than faking a read that returns empty (which silently defeats idempotency), resources set `forceApply: true` to declare this in the type system. The reconciler skips `computeChange` and always calls `onChange`. This is honest about the trade-off.
 
-#### Property-based (nginx, logs, registry, checks, scheduler)
-
-These all follow the same pattern — read a report, set changed properties:
-
-```typescript
-const Nginx: Resource<Record<string, string>> = {
-  key: "nginx",
-  scope: "both",
-  read: (ctx, app) => ctx.report("nginx", app),
-  onChange: (ctx, app, { modified }: MapChange) => {
-    for (const [key, value] of entries(modified))
-      ctx.run("nginx:set", app, key, String(value))
-    ctx.run("proxy:build-config", app)
-  }
-}
-
-// Logs, registry, checks properties, scheduler — same shape, different namespace
-```
-
-#### List-based (ports, domains, storage, networks)
-
-```typescript
-const Ports: Resource<string[]> = {
-  key: "ports",
-  scope: "app",
-  read: (ctx, app) => ctx.query("ports:report", app, "--ports-map").then(splitWords),
-  onChange: (ctx, app, { changed, after }: ListChange) => {
-    if (changed) ctx.run("ports:set", app, ...after)
-  }
-}
-
-const Domains: Resource<string[]> = {
-  key: "domains",
-  scope: "both",
-  read: (ctx, app) => ctx.query("domains:report", app, "--domains-app-vhosts").then(splitLines),
-  onChange: (ctx, app, { added, removed }: ListChange) => {
-    for (const d of removed) ctx.run("domains:remove", app, d)
-    for (const d of added) ctx.run("domains:add", app, d)
-  }
-}
-
-const Storage: Resource<string[]> = {
-  key: "storage",
-  scope: "app",
-  read: (ctx, app) => ctx.query("storage:list", app).then(splitLines),
-  onChange: (ctx, app, { added, removed }: ListChange) => {
-    for (const m of removed) ctx.run("storage:unmount", app, m)
-    for (const m of added) ctx.run("storage:mount", app, m)
-  }
-}
-```
-
-#### Toggle (proxy)
-
-```typescript
-const Proxy: Resource<boolean> = {
-  key: "proxy",
-  scope: "app",
-  read: (ctx, app) => ctx.query("proxy:report", app, "--proxy-enabled").then(toBool),
-  onChange: (ctx, app, { after }: Change<boolean>) => {
-    ctx.run(after ? "proxy:enable" : "proxy:disable", app)
-  }
-}
-```
-
-#### Map with managed keys (env vars)
-
-```typescript
-const Config: Resource<Record<string, string>> = {
-  key: "env",
-  scope: "both",
-  read: (ctx, app) => ctx.exportMap("config", app),
-  onChange: (ctx, app, { added, removed, modified }: MapChange) => {
-    if (removed.length) ctx.run("config:unset", "--no-restart", app, ...removed)
-    const toSet = { ...added, ...modified }
-    if (Object.keys(toSet).length) {
-      const pairs = entries(toSet).map(([k, v]) => `${k}=${v}`)
-      ctx.run("config:set", "--no-restart", app, ...pairs)
-    }
-  }
-}
-```
-
-Note: managed keys tracking (`DOKKU_COMPOSE_MANAGED_KEYS`) would be handled inside Config's read/onChange — read filters it out, onChange updates it alongside the set call.
-
-#### Lifecycle (apps, services)
-
-```typescript
-const Apps: Resource<boolean> = {
-  key: "_app",
-  scope: "app",
-  read: (ctx, app) => ctx.check("apps:exists", app),
-  onChange: (ctx, app, { after }: Change<boolean>) => {
-    if (after) ctx.run("apps:create", app)
-    else ctx.run("apps:destroy", app, "--force")
-  }
-}
-
-const Services = {
-  key: "services",
-  scope: "global",
-  read: (ctx, name) => ctx.check(`services:exists`, name),  // plugin-specific
-  onChange: (ctx, name, { before, after }) => {
-    if (!before && after) {
-      ctx.run(`${after.plugin}:create`, name,
-        ...(after.image ? ["--image", after.image] : []),
-        ...(after.version ? ["--image-version", after.version] : []))
-    }
-    if (before && !after) {
-      ctx.run(`${before.plugin}:destroy`, name, "--force")
-    }
-  }
-}
-```
-
-#### Certs (file-based)
-
-```typescript
-const Certs: Resource<boolean | { certfile: string, keyfile: string }> = {
-  key: "ssl",
-  scope: "app",
-  read: (ctx, app) => ctx.query("certs:report", app, "--ssl-enabled").then(toBool),
-  onChange: (ctx, app, { before, after }) => {
-    if (after === false && before) ctx.run("certs:remove", app)
-    if (after && typeof after === "object")
-      ctx.run("certs:add", app, after.certfile, after.keyfile)
-  }
-}
-```
-
-### Generic Reconcile Loop
+#### Reconcile
 
 ```typescript
 async function reconcile<T>(
@@ -231,6 +101,10 @@ async function reconcile<T>(
   desired: T | undefined
 ) {
   if (desired === undefined) return
+  if (resource.forceApply) {
+    await resource.onChange(ctx, target, { before: undefined, after: desired, changed: true })
+    return
+  }
   const before = await resource.read(ctx, target)
   const change = computeChange(before, desired)
   if (!change.changed) return
@@ -238,109 +112,193 @@ async function reconcile<T>(
 }
 ```
 
-### Resource Registry
+### Resource Definitions
 
-All resources are registered in a single array with their execution order:
+#### Property-based (nginx, logs, registry, scheduler)
+
+These all follow the same pattern — read a report, set changed properties:
 
 ```typescript
-const APP_RESOURCES = [
-  Apps, Domains, /* Links, */ Networks, Proxy, Ports,
-  Certs, Storage, Nginx, Checks, Logs, Registry,
-  Scheduler, Config, Builder, DockerOptions, Git
-]
-
-const GLOBAL_RESOURCES = [Domains, Config, Logs, Nginx]
+const Nginx: Resource<Record<string, string>> = {
+  key: "nginx",
+  read: (ctx, app) => parseReport(ctx.query("nginx:report", app), "nginx"),
+  onChange: (ctx, app, { modified }: MapChange) => {
+    for (const [key, value] of entries(modified))
+      ctx.run("nginx:set", app, key, String(value))
+    ctx.run("proxy:build-config", app)
+  }
+}
 ```
+
+#### List-based (ports, domains, storage)
+
+```typescript
+const Ports: Resource<string[]> = {
+  key: "ports",
+  read: (ctx, app) => ctx.query("ports:report", app, "--ports-map").then(splitWords),
+  onChange: (ctx, app, { after }: ListChange) => {
+    ctx.run("ports:set", app, ...after)  // replace-all semantics
+  }
+}
+
+const Domains: Resource<string[]> = {
+  key: "domains",
+  read: (ctx, app) => ctx.query("domains:report", app, "--domains-app-vhosts").then(splitLines),
+  onChange: (ctx, app, { added, removed }: ListChange) => {
+    for (const d of removed) ctx.run("domains:remove", app, d)
+    for (const d of added) ctx.run("domains:add", app, d)
+  }
+}
+```
+
+#### Toggle (proxy)
+
+```typescript
+const Proxy: Resource<boolean> = {
+  key: "proxy",
+  read: (ctx, app) => ctx.query("proxy:report", app, "--proxy-enabled").then(toBool),
+  onChange: (ctx, app, { after }: Change<boolean>) => {
+    ctx.run(after ? "proxy:enable" : "proxy:disable", app)
+  }
+}
+```
+
+#### Env vars with managed keys
+
+Config.read() returns an explicit structure separating what we manage from server state:
+
+```typescript
+interface ManagedConfig {
+  managed: Record<string, string>   // keys we own (tracked by DOKKU_COMPOSE_MANAGED_KEYS)
+  managedKeys: string[]             // the raw managed key list
+}
+
+const Config: Resource<Record<string, string>> = {
+  key: "env",
+  read: async (ctx, app) => {
+    const managedRaw = await ctx.query("config:get", app, "DOKKU_COMPOSE_MANAGED_KEYS")
+    const managedKeys = managedRaw.trim() ? managedRaw.trim().split(",") : []
+    if (managedKeys.length === 0) return {}
+    const raw = await ctx.query("config:export", app, "--format", "shell")
+    const result: Record<string, string> = {}
+    for (const line of raw.split("\n")) {
+      const match = line.match(/^export\s+(\w+)=['"]?(.*?)['"]?$/)
+      if (match && managedKeys.includes(match[1])) result[match[1]] = match[2]
+    }
+    return result
+  },
+  onChange: async (ctx, app, { added, removed, modified, after }: MapChange) => {
+    if (removed.length) ctx.run("config:unset", "--no-restart", app, ...removed)
+    const pairs = entries(after).map(([k, v]) => `${k}=${v}`)
+    const managedValue = Object.keys(after).join(",")
+    ctx.run("config:set", "--no-restart", app, ...pairs, `DOKKU_COMPOSE_MANAGED_KEYS=${managedValue}`)
+  }
+}
+```
+
+The two queries in `read()` are explicit and intentional: first get the managed key list, then filter the export to only managed keys. This ensures we only diff what we own. The coupling between them is visible in the same function body.
+
+#### Lifecycle (apps)
+
+```typescript
+const Apps: Resource<boolean> = {
+  key: "_app",
+  read: (ctx, app) => ctx.check("apps:exists", app),
+  onChange: (ctx, app, { after }: Change<boolean>) => {
+    if (after) ctx.run("apps:create", app)
+    else ctx.run("apps:destroy", app, "--force")
+  }
+}
+```
+
+#### Certs (file-based)
+
+```typescript
+const Certs: Resource<SslValue> = {
+  key: "ssl",
+  read: (ctx, app) => ctx.query("certs:report", app, "--ssl-enabled").then(toBool),
+  onChange: (ctx, app, { before, after }) => {
+    if (after === false && before) ctx.run("certs:remove", app)
+    if (after && typeof after === "object")
+      ctx.run("certs:add", app, after.certfile, after.keyfile)
+  }
+}
+```
+
+#### Force-apply resources (docker-options, builder, checks)
+
+These namespaces lack parseable report formats. They declare `forceApply: true` so the reconciler skips diffing and always applies. The operations are safe to repeat (clear+add, idempotent set).
+
+```typescript
+const DockerOptions: Resource<DockerOpts> = {
+  key: "docker_options",
+  forceApply: true,
+  read: async () => ({} as DockerOpts),  // unused when forceApply=true
+  onChange: async (ctx, target, { after }) => {
+    for (const phase of ["build", "deploy", "run"]) {
+      const opts = after[phase]
+      if (!opts?.length) continue
+      ctx.run("docker-options:clear", target, phase)
+      for (const opt of opts) ctx.run("docker-options:add", target, phase, opt)
+    }
+  }
+}
+```
+
+### Orchestration Phases
+
+Rather than one flat `APP_RESOURCES` array with skip-sets, `up.ts` uses explicit phases that make ordering dependencies visible:
+
+```typescript
+// Phase 1: Infrastructure (plugins, global config, networks, services)
+// Phase 2: Per-app lifecycle
+//   Phase 2a: Create app
+//   Phase 2b: Networking (domains, links, networks, proxy, ports)
+//   Phase 2c: Configuration (certs, storage, nginx, checks, logs, registry, scheduler, env)
+//   Phase 2d: Build (builder, git, docker-options)
+
+const NETWORKING_RESOURCES = [Domains, Networks, NetworkProps, Proxy, Ports]
+const CONFIG_RESOURCES = [Certs, Storage, Nginx, Checks, Logs, Registry, Scheduler, Config]
+const BUILD_RESOURCES = [Builder, Git, DockerOptions]
+```
+
+Links are handled explicitly between 2a and 2b because they have a cross-resource dependency on services (Phase 1).
+
+All resource arrays are used by export and diff too — they iterate the same phases.
 
 ### Command Implementations
 
-All commands are different traversals of the same resources:
-
-#### up / up --dry-run
-
-```typescript
-async function runUp(ctx: Context, config: Config) {
-  if (config.plugins) await ensurePlugins(ctx, config.plugins)
-
-  for (const res of GLOBAL_RESOURCES)
-    await reconcile(res, ctx, "--global", config[res.key])
-
-  if (config.networks) await ensureNetworks(ctx, config.networks)
-  if (config.services) /* reconcile services */
-
-  for (const [name, app] of entries(config.apps))
-    for (const res of APP_RESOURCES)
-      await reconcile(res, ctx, name, app[res.key])
-}
-```
-
-Dry-run is the same code path — the context records commands instead of executing.
-
-#### export
-
-```typescript
-async function runExport(ctx: Context, apps: string[]) {
-  const config: any = { apps: {} }
-  for (const app of apps) {
-    config.apps[app] = {}
-    for (const res of APP_RESOURCES) {
-      const value = await res.read(ctx, app)
-      if (value !== undefined && value !== null)
-        config.apps[app][res.key] = value
-    }
-  }
-  return yaml.dump(config)
-}
-```
-
-#### diff
-
-```typescript
-async function runDiff(ctx: Context, config: Config) {
-  for (const [name, app] of entries(config.apps)) {
-    for (const res of APP_RESOURCES) {
-      const desired = app[res.key]
-      if (desired === undefined) continue
-      const before = await res.read(ctx, name)
-      const change = computeChange(before, desired)
-      if (change.changed) printChange(name, res.key, change)
-    }
-  }
-}
-```
-
-#### down
-
-```typescript
-async function runDown(ctx: Context, config: Config) {
-  for (const app of Object.keys(config.apps))
-    await reconcile(Apps, ctx, app, false)  // after=false triggers destroy
-
-  for (const [name, svc] of entries(config.services ?? {}))
-    await reconcile(Services, ctx, name, null)
-
-  for (const net of config.networks ?? [])
-    ctx.run("network:destroy", net)
-}
-```
+| Command | `read` | `computeChange` | `onChange` | `ctx.run` behavior |
+|---------|--------|-----------------|------------|-------------------|
+| `up` | yes | yes (unless forceApply) | yes | executes |
+| `up --dry-run` | yes | yes (unless forceApply) | yes | records |
+| `diff` | yes | yes | no — prints change | n/a |
+| `export` | yes | no | no | n/a |
+| `down` | optional | optional | yes (after=false/null) | executes |
 
 ### Summary
 
 | Piece | Responsibility |
 |-------|---------------|
 | **Context** | Cached reads, run-or-record writes |
-| **`computeChange()`** | One function, computes ListChange/MapChange/Change from before+after |
-| **Resource** | `{ key, scope, read, onChange }` — 5-10 lines per Dokku namespace |
-| **`reconcile()`** | Generic 5-line loop: read → computeChange → onChange |
-| **APP_RESOURCES / GLOBAL_RESOURCES** | Ordered arrays defining execution sequence |
+| **`computeChange()`** | Overloaded function: ListChange/MapChange/Change from before+after |
+| **Resource** | `{ key, read, onChange, forceApply? }` — 5-10 lines per Dokku namespace |
+| **`reconcile()`** | Generic loop: read → computeChange → onChange (or skip diff if forceApply) |
+| **Phase arrays** | NETWORKING / CONFIG / BUILD — explicit ordering with visible dependencies |
 
-Adding a new Dokku namespace: define a resource (~5 lines), add it to the array. All commands pick it up automatically.
+Adding a new Dokku namespace: define a resource (~5 lines), add it to the appropriate phase array. All commands pick it up automatically.
 
 ### What Stays Custom
 
 - **Plugins** — install + version-aware update doesn't fit the property model
-- **Service links** — cross-resource dependency (service must exist before linking)
+- **Service links** — cross-resource dependency (services must exist before linking)
 - **Service backups** — multi-step auth + schedule configuration
-- **Builder build args** — uses docker-options under the hood
+- **Top-level networks** — create lifecycle (not property-based)
 
 These remain as standalone functions called explicitly in the orchestrator, outside the generic resource loop.
+
+### Known Limitations
+
+- **Report parser fragility**: Dokku report formats vary between plugins and versions. The `parseReport()` helper assumes "Namespace key: value" format. Needs defensive tests with real Dokku output samples from multiple plugin versions.
+- **Force-apply resources**: DockerOptions, Builder, and Checks re-apply every run. This is safe (idempotent operations) but means `diff` will always show them as changed. Acceptable trade-off vs. fragile report parsing.
+- **Service export**: `exportServices()` remains a stub — service state can't be reverse-engineered without knowing installed plugins.
