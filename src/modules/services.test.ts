@@ -105,6 +105,7 @@ describe('ensureServiceBackups', () => {
   it('configures backup for a service with backup config', async () => {
     const runner = createRunner({ dryRun: false })
     runner.run = vi.fn()
+    runner.query = vi.fn().mockResolvedValue('')  // no stored hash → run backup
     const services = { 'funqtion-db': { plugin: 'postgres', backup: backupConfig } }
     await ensureServiceBackups(runner, services)
     expect(runner.run).toHaveBeenCalledWith('postgres:backup-deauth', 'funqtion-db')
@@ -124,6 +125,75 @@ describe('ensureServiceBackups', () => {
     const services = { 'funqtion-redis': { plugin: 'redis' } }
     await ensureServiceBackups(runner, services)
     expect(runner.run).not.toHaveBeenCalled()
+  })
+
+  it('skips backup configuration when hash matches stored hash', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.run = vi.fn()
+    const backup = {
+      schedule: '0 * * * *',
+      bucket: 'db-backups/funqtion-db',
+      auth: {
+        access_key_id: 'KEY123',
+        secret_access_key: 'SECRET456',
+        region: 'auto',
+        signature_version: 's3v4',
+        endpoint: 'https://r2.example.com',
+      },
+    }
+    // Compute the expected hash the same way the implementation will
+    const { createHash } = await import('crypto')
+    const hash = createHash('sha256').update(JSON.stringify(backup)).digest('hex')
+    runner.query = vi.fn().mockResolvedValue(hash)
+    const services = { 'funqtion-db': { plugin: 'postgres', backup } }
+    await ensureServiceBackups(runner, services)
+    expect(runner.run).not.toHaveBeenCalled()
+  })
+
+  it('runs backup configuration and stores hash when hash differs', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.run = vi.fn()
+    runner.query = vi.fn().mockResolvedValue('old-hash-value')
+    const backup = {
+      schedule: '0 * * * *',
+      bucket: 'db-backups/funqtion-db',
+      auth: {
+        access_key_id: 'KEY123',
+        secret_access_key: 'SECRET456',
+        region: 'auto',
+        signature_version: 's3v4',
+        endpoint: 'https://r2.example.com',
+      },
+    }
+    const services = { 'funqtion-db': { plugin: 'postgres', backup } }
+    await ensureServiceBackups(runner, services)
+    expect(runner.run).toHaveBeenCalledWith('postgres:backup-deauth', 'funqtion-db')
+    expect(runner.run).toHaveBeenCalledWith('postgres:backup-auth', 'funqtion-db', 'KEY123', 'SECRET456', 'auto', 's3v4', 'https://r2.example.com')
+    expect(runner.run).toHaveBeenCalledWith('postgres:backup-schedule', 'funqtion-db', '0 * * * *', 'db-backups/funqtion-db')
+    // Verify the new hash is stored
+    const { createHash } = await import('crypto')
+    const expectedHash = createHash('sha256').update(JSON.stringify(backup)).digest('hex')
+    expect(runner.run).toHaveBeenCalledWith('config:set', '--global', `DOKKU_COMPOSE_BACKUP_HASH_FUNQTION_DB=${expectedHash}`)
+  })
+
+  it('runs backup configuration when no hash stored yet', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.run = vi.fn()
+    runner.query = vi.fn().mockResolvedValue('')  // no stored hash
+    const backup = {
+      schedule: '0 * * * *',
+      bucket: 'db-backups/funqtion-db',
+      auth: {
+        access_key_id: 'KEY123',
+        secret_access_key: 'SECRET456',
+        region: 'auto',
+        signature_version: 's3v4',
+        endpoint: 'https://r2.example.com',
+      },
+    }
+    const services = { 'funqtion-db': { plugin: 'postgres', backup } }
+    await ensureServiceBackups(runner, services)
+    expect(runner.run).toHaveBeenCalledWith('postgres:backup-deauth', 'funqtion-db')
   })
 })
 

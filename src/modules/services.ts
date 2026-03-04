@@ -1,6 +1,15 @@
+import { createHash } from 'crypto'
 import type { Runner } from '../core/dokku.js'
-import type { ServiceConfig } from '../core/schema.js'
+import type { ServiceBackupConfig, ServiceConfig } from '../core/schema.js'
 import { logAction, logDone, logSkip } from '../core/logger.js'
+
+function backupHashKey(serviceName: string): string {
+  return 'DOKKU_COMPOSE_BACKUP_HASH_' + serviceName.toUpperCase().replace(/-/g, '_')
+}
+
+function computeBackupHash(backup: ServiceBackupConfig): string {
+  return createHash('sha256').update(JSON.stringify(backup)).digest('hex')
+}
 
 export async function ensureServices(
   runner: Runner,
@@ -24,8 +33,12 @@ export async function ensureServiceBackups(
 ): Promise<void> {
   for (const [name, config] of Object.entries(services)) {
     if (!config.backup) continue
-    const { schedule, bucket, auth } = config.backup
     logAction('services', `Configuring backup for ${name}`)
+    const hashKey = backupHashKey(name)
+    const desiredHash = computeBackupHash(config.backup)
+    const storedHash = await runner.query('config:get', '--global', hashKey)
+    if (storedHash === desiredHash) { logSkip(); continue }
+    const { schedule, bucket, auth } = config.backup
     await runner.run(`${config.plugin}:backup-deauth`, name)
     await runner.run(
       `${config.plugin}:backup-auth`, name,
@@ -33,6 +46,7 @@ export async function ensureServiceBackups(
       auth.region, auth.signature_version, auth.endpoint
     )
     await runner.run(`${config.plugin}:backup-schedule`, name, schedule, bucket)
+    await runner.run('config:set', '--global', `${hashKey}=${desiredHash}`)
     logDone()
   }
 }
