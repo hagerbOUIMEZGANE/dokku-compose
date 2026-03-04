@@ -326,7 +326,11 @@ export interface MapChange extends Change<Record<string, string>> {
   modified: Record<string, string>
 }
 
-export function computeChange(before: unknown, after: unknown): any {
+// Overloads for proper type narrowing at call sites
+export function computeChange(before: string[], after: string[]): ListChange
+export function computeChange(before: Record<string, string>, after: Record<string, string>): MapChange
+export function computeChange<T>(before: T, after: T): Change<T>
+export function computeChange(before: unknown, after: unknown): Change | ListChange | MapChange {
   // Null/undefined — existence check
   if (before === null || before === undefined || after === null || after === undefined) {
     return { before, after, changed: before !== after }
@@ -1219,10 +1223,13 @@ import type { Resource } from '../core/reconcile.js'
 
 type DockerOpts = { build?: string[]; deploy?: string[]; run?: string[] }
 
+// ALWAYS-APPLY: Docker options lack a clean report format for diffing.
+// read() returns empty so computeChange always detects a diff.
+// This means docker-options are re-applied every run (clear + add),
+// which is safe because the operation is idempotent.
 export const DockerOptions: Resource<DockerOpts> = {
   key: 'docker_options',
   read: async () => {
-    // Docker options don't have a clean report format; always apply
     return {} as DockerOpts
   },
   onChange: async (ctx, target, { after }: { after: DockerOpts }) => {
@@ -1249,10 +1256,11 @@ type BuildConfig = {
   args?: Record<string, string>
 }
 
+// ALWAYS-APPLY: Builder spans multiple Dokku namespaces (builder-dockerfile,
+// app-json, builder, docker-options) with no unified report. Re-applies every run.
 export const Builder: Resource<BuildConfig> = {
   key: 'build',
   read: async () => {
-    // Builder properties don't have a unified report; always apply
     return {} as BuildConfig
   },
   onChange: async (ctx, target, { after }: { after: BuildConfig }) => {
@@ -1302,10 +1310,11 @@ type ChecksConfig = false | {
   [key: string]: string | number | boolean | string[] | undefined
 }
 
+// ALWAYS-APPLY: Checks report format is not cleanly parseable for diffing.
+// Re-applies every run. Safe because checks:set is idempotent.
 export const Checks: Resource<ChecksConfig> = {
   key: 'checks',
   read: async () => {
-    // Checks don't have a clean parseable report; always apply
     return {} as ChecksConfig
   },
   onChange: async (ctx, target, { after }: Change<ChecksConfig>) => {
@@ -1555,7 +1564,10 @@ export async function runUp(
     // Domains
     await reconcile(APP_RESOURCES.find(r => r.key === 'domains')!, ctx, app, appConfig.domains)
 
-    // Links (custom — cross-resource dependency on services)
+    // Links (custom — cross-resource dependency on services).
+    // ORDERING: Links depend on services existing (Phase 4 above).
+    // This must run after Phase 4 and after app creation. Do not
+    // move into the generic resource loop without preserving this.
     if (config.services) {
       await ensureAppLinks(ctx.runner, app, appConfig.links ?? [], config.services)
     }
@@ -1750,8 +1762,8 @@ export async function computeDiff(ctx: Context, config: Config): Promise<DiffRes
     result.apps[app] = appDiff
   }
 
-  for (const [svc] of Object.entries(config.services ?? {})) {
-    const exists = await ctx.check(`postgres:exists`, svc)  // best-effort
+  for (const [svc, svcConfig] of Object.entries(config.services ?? {})) {
+    const exists = await ctx.check(`${svcConfig.plugin}:exists`, svc)
     result.services[svc] = { status: exists ? 'in-sync' : 'missing' }
     if (!exists) result.inSync = false
   }
@@ -1759,11 +1771,11 @@ export async function computeDiff(ctx: Context, config: Config): Promise<DiffRes
   return result
 }
 
-// Keep formatSummary and formatVerbose unchanged — they work on DiffResult
-export { formatSummary, formatVerbose } from './diff.js'
+// formatSummary and formatVerbose stay defined in this file unchanged — they work on DiffResult
+// (copy them from the existing diff.ts into this rewritten version)
 ```
 
-Note: `formatSummary` and `formatVerbose` stay as-is since they operate on the `DiffResult` type which doesn't change. The only change is that `computeDiff` now takes `Context` and uses resources instead of a pre-exported Config.
+Note: `formatSummary` and `formatVerbose` stay defined in the same file (do NOT re-export from themselves — that would be a circular import). They operate on the `DiffResult` type which doesn't change. The only change is that `computeDiff` now takes `Context` and uses resources instead of a pre-exported Config.
 
 **Step 4: Run tests**
 
