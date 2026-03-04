@@ -4,7 +4,7 @@ import { ensureApp } from '../modules/apps.js'
 import { ensureAppDomains, ensureGlobalDomains } from '../modules/domains.js'
 import { ensurePlugins } from '../modules/plugins.js'
 import { ensureNetworks, ensureAppNetworks, ensureAppNetwork } from '../modules/network.js'
-import { ensureServices, ensureAppLinks } from '../modules/services.js'
+import { ensureServices, ensureServiceBackups, ensureAppLinks } from '../modules/services.js'
 import { ensureAppProxy } from '../modules/proxy.js'
 import { ensureAppPorts } from '../modules/ports.js'
 import { ensureAppCerts } from '../modules/certs.js'
@@ -41,6 +41,7 @@ export async function runUp(
 
   // Phase 4: Services
   if (config.services) await ensureServices(runner, config.services)
+  if (config.services) await ensureServiceBackups(runner, config.services)
 
   // Phase 5: Per-app
   for (const app of apps) {

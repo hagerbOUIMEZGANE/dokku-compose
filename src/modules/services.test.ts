@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createRunner } from '../core/dokku.js'
-import { ensureServices, ensureAppLinks, exportServices, exportAppLinks } from './services.js'
+import { ensureServices, ensureServiceBackups, ensureAppLinks, exportServices, exportAppLinks } from './services.js'
 
 describe('ensureServices', () => {
   it('creates service that does not exist', async () => {
@@ -86,6 +86,44 @@ describe('exportServices', () => {
     const runner = createRunner({ dryRun: false })
     const result = await exportServices(runner)
     expect(result).toEqual({})
+  })
+})
+
+describe('ensureServiceBackups', () => {
+  const backupConfig = {
+    schedule: '0 * * * *',
+    bucket: 'db-backups/funqtion-db',
+    auth: {
+      access_key_id: 'KEY123',
+      secret_access_key: 'SECRET456',
+      region: 'auto',
+      signature_version: 's3v4',
+      endpoint: 'https://r2.example.com',
+    },
+  }
+
+  it('configures backup for a service with backup config', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.run = vi.fn()
+    const services = { 'funqtion-db': { plugin: 'postgres', backup: backupConfig } }
+    await ensureServiceBackups(runner, services)
+    expect(runner.run).toHaveBeenCalledWith('postgres:backup-deauth', 'funqtion-db')
+    expect(runner.run).toHaveBeenCalledWith(
+      'postgres:backup-auth', 'funqtion-db',
+      'KEY123', 'SECRET456', 'auto', 's3v4', 'https://r2.example.com'
+    )
+    expect(runner.run).toHaveBeenCalledWith(
+      'postgres:backup-schedule', 'funqtion-db',
+      '0 * * * *', 'db-backups/funqtion-db'
+    )
+  })
+
+  it('skips services without backup config', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.run = vi.fn()
+    const services = { 'funqtion-redis': { plugin: 'redis' } }
+    await ensureServiceBackups(runner, services)
+    expect(runner.run).not.toHaveBeenCalled()
   })
 })
 

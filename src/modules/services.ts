@@ -18,6 +18,25 @@ export async function ensureServices(
   }
 }
 
+export async function ensureServiceBackups(
+  runner: Runner,
+  services: Record<string, ServiceConfig>
+): Promise<void> {
+  for (const [name, config] of Object.entries(services)) {
+    if (!config.backup) continue
+    const { schedule, bucket, auth } = config.backup
+    logAction('services', `Configuring backup for ${name}`)
+    await runner.run(`${config.plugin}:backup-deauth`, name)
+    await runner.run(
+      `${config.plugin}:backup-auth`, name,
+      auth.access_key_id, auth.secret_access_key,
+      auth.region, auth.signature_version, auth.endpoint
+    )
+    await runner.run(`${config.plugin}:backup-schedule`, name, schedule, bucket)
+    logDone()
+  }
+}
+
 export async function ensureAppLinks(
   runner: Runner,
   app: string,
