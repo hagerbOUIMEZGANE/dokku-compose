@@ -1457,7 +1457,8 @@ type NetworkProps = {
 
 export const NetworkProps: Resource<NetworkProps> = {
   key: 'network',
-  read: async () => ({} as NetworkProps),  // always apply
+  forceApply: true,
+  read: async () => ({} as NetworkProps),
   onChange: async (ctx, target, { after }: Change<NetworkProps>) => {
     if (after.attach_post_create !== undefined && after.attach_post_create !== false) {
       const nets = Array.isArray(after.attach_post_create)
@@ -1795,7 +1796,7 @@ Rewrite `src/commands/diff.ts` to use resources:
 import type { Context } from '../core/context.js'
 import type { Config, AppConfig } from '../core/schema.js'
 import { computeChange } from '../core/change.js'
-import { APP_RESOURCES } from '../resources/index.js'
+import { ALL_APP_RESOURCES } from '../resources/index.js'
 import chalk from 'chalk'
 
 type DiffStatus = 'in-sync' | 'changed' | 'missing' | 'extra'
