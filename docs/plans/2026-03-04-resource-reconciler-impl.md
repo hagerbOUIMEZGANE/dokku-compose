@@ -82,37 +82,6 @@ describe('createContext', () => {
     expect(runner.run).toHaveBeenCalledTimes(1)
   })
 
-  it('invalidate() clears cached entries matching prefix', async () => {
-    const runner = createRunner({ dryRun: false })
-    runner.query = vi.fn()
-      .mockResolvedValueOnce('first')
-      .mockResolvedValueOnce('second')
-    const ctx = createContext(runner)
-
-    await ctx.query('nginx:report', 'myapp')
-    ctx.invalidate('nginx:report', 'myapp')
-    const result = await ctx.query('nginx:report', 'myapp')
-
-    expect(result).toBe('second')
-    expect(runner.query).toHaveBeenCalledTimes(2)
-  })
-
-  it('invalidate() only clears matching prefix', async () => {
-    const runner = createRunner({ dryRun: false })
-    runner.query = vi.fn()
-      .mockResolvedValueOnce('nginx output')
-      .mockResolvedValueOnce('ports output')
-    const ctx = createContext(runner)
-
-    await ctx.query('nginx:report', 'myapp')
-    await ctx.query('ports:report', 'myapp')
-    ctx.invalidate('nginx:report')
-
-    // nginx cache busted, ports still cached
-    await ctx.query('ports:report', 'myapp')
-    expect(runner.query).toHaveBeenCalledTimes(2)  // no extra call for ports
-  })
-
   it('delegates check() to runner without caching', async () => {
     const runner = createRunner({ dryRun: false })
     runner.check = vi.fn().mockResolvedValue(true)
@@ -144,8 +113,6 @@ export interface Context {
   check(...args: string[]): Promise<boolean>
   /** Mutation — records command, executes via runner */
   run(...args: string[]): Promise<void>
-  /** Drop cached entries whose key starts with the given args joined by \0 */
-  invalidate(...prefix: string[]): void
   /** All commands that were run (or would be in dry-run) */
   commands: string[][]
   /** Close the underlying SSH connection */
@@ -174,13 +141,6 @@ export function createContext(runner: Runner): Context {
     async run(...args: string[]): Promise<void> {
       commands.push(args)
       await runner.run(...args)
-    },
-
-    invalidate(...prefix: string[]): void {
-      const p = prefix.join('\0')
-      for (const key of cache.keys()) {
-        if (key.startsWith(p)) cache.delete(key)
-      }
     },
 
     close(): Promise<void> {
@@ -1949,8 +1909,6 @@ await ctx.close()
 **Step 3: Update custom function signatures (Runner → Context)**
 
 This is mechanical — replace `runner: Runner` with `ctx: Context`, then replace `runner.query(` → `ctx.query(`, `runner.run(` → `ctx.run(`, `runner.check(` → `ctx.check(` in each file.
-
-For `src/modules/services.ts` — `ensureAppLinks` does read-after-write (checks link status, then links/unlinks). No invalidation needed here because each service's link status is checked independently and not re-read after mutation within the same loop iteration.
 
 For `src/modules/plugins.ts`:
 ```typescript
