@@ -1,0 +1,82 @@
+# dokku-compose.yml
+# Declarative Dokku deployment configuration
+
+# Optional: Dokku version check
+dokku:
+  version: "0.35.12"
+
+# Plugin installation
+plugins:
+  postgres:
+    url: https://github.com/dokku/dokku-postgres.git
+  redis:
+    url: https://github.com/dokku/dokku-redis.git
+  mongo:
+    url: https://github.com/dokku/dokku-mongo.git
+  letsencrypt:
+    url: https://github.com/dokku/dokku-letsencrypt.git
+    script: scripts/letsencrypt.sh   # custom handler (not a service plugin)
+
+# Shared Docker networks for inter-app communication
+networks:
+  - backend-net
+
+# Service instances — created via Dokku service plugins
+services:
+  api-postgres:
+    plugin: postgres
+    version: "17-3.5"
+    image: postgis/postgis         # custom image (e.g., PostGIS)
+  api-redis:
+    plugin: redis
+    version: "7.2-alpine"
+  worker-db:
+    plugin: postgres               # separate database for worker
+  shared-cache:
+    plugin: redis                  # shared between multiple apps
+
+# Application definitions
+apps:
+  # Full example with all options
+  api:
+    dockerfile: docker/prod/api/Dockerfile
+    app_json: docker/prod/api/app.json
+    build_dir: apps/api
+    ports:
+      - "https:4001:4000"
+    ssl: certs/example.com
+    links:
+      - api-postgres
+      - api-redis
+      - shared-cache
+    nginx:
+      client-max-body-size: "15m"
+      proxy-buffer-size: "8k"
+    env:
+      APP_ENV: "${APP_ENV}"
+      SECRET_KEY: "${SECRET_KEY}"
+    build_args:
+      SENTRY_AUTH_TOKEN: "${SENTRY_AUTH_TOKEN}"
+    networks:
+      - backend-net
+
+  # Worker — shares cache with api, has its own database
+  worker:
+    build_dir: apps/worker
+    ports:
+      - "http:5001:5000"
+    links:
+      - worker-db
+      - shared-cache
+    networks:
+      - backend-net
+
+  # Web frontend — no database, uses letsencrypt custom script
+  web:
+    dockerfile: docker/prod/web/Dockerfile
+    build_dir: apps/web
+    ports:
+      - "https:3000:3000"
+    ssl: certs/example.com
+    letsencrypt:
+      email: admin@example.com

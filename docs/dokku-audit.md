@@ -1,0 +1,951 @@
+# Dokku Feature Audit
+
+Systematic audit of all Dokku command namespaces for dokku-compose coverage.
+See `docs/plans/2026-03-03-dokku-feature-audit-design.md` for methodology.
+
+**Legend:**
+- **supported** — Fully implemented in dokku-compose
+- **partial** — Module exists but missing some declarative commands
+- **planned** — Not yet implemented, has declarative commands worth supporting
+- **skipped** — No declarative commands that make sense for dokku-compose
+
+---
+
+## Summary
+
+| # | Namespace | Module | Status | Doc |
+|---|-----------|--------|--------|-----|
+| 1 | apps | apps.sh | supported | [link](https://dokku.com/docs/deployment/application-management/) |
+| 2 | domains | domains.sh | partial | [link](https://dokku.com/docs/configuration/domains/) |
+| 3 | config | config.sh | supported | [link](https://dokku.com/docs/configuration/environment-variables/) |
+| 4 | certs | certs.sh | supported | [link](https://dokku.com/docs/configuration/ssl/) |
+| 5 | network | network.sh | supported | [link](https://dokku.com/docs/networking/network/) |
+| 6 | ports | ports.sh | supported | [link](https://dokku.com/docs/networking/port-management/) |
+| 7 | nginx | nginx.sh | supported | [link](https://dokku.com/docs/networking/proxies/nginx/) |
+| 8 | builder-* | builder.sh | partial | [link](https://dokku.com/docs/deployment/builders/builder-management/) |
+| 9 | docker-options | docker_options.sh | supported | [link](https://dokku.com/docs/advanced-usage/docker-options/) |
+| 10 | plugin | plugins.sh | supported | [link](https://dokku.com/docs/advanced-usage/plugin-management/) |
+| 11 | version | dokku.sh | supported | [link](https://dokku.com/docs/getting-started/installation/) |
+| 12 | git | git.sh | skipped | [link](https://dokku.com/docs/deployment/methods/git/) |
+| 13 | proxy | proxy.sh | supported | [link](https://dokku.com/docs/networking/proxy-management/) |
+| 14 | ps | — | planned | [link](https://dokku.com/docs/processes/process-management/) |
+| 15 | storage | storage.sh | partial | [link](https://dokku.com/docs/advanced-usage/persistent-storage/) |
+| 16 | resource | — | planned | [link](https://dokku.com/docs/advanced-usage/resource-management/) |
+| 17 | registry | registry.sh | partial | [link](https://dokku.com/docs/advanced-usage/registry-management/) |
+| 18 | scheduler | scheduler.sh | partial | [link](https://dokku.com/docs/deployment/schedulers/scheduler-management/) |
+| 19 | checks | checks.sh | supported | [link](https://dokku.com/docs/deployment/zero-downtime-deploys/) |
+| 20 | logs | logs.sh | partial | [link](https://dokku.com/docs/deployment/logs/) |
+| 21 | cron | — | planned | [link](https://dokku.com/docs/processes/scheduled-cron-tasks/) |
+| 22 | run | — | skipped | [link](https://dokku.com/docs/processes/one-off-tasks/) |
+| 23 | repo | — | skipped | [link](https://dokku.com/docs/advanced-usage/repository-management/) |
+| 24 | image | — | skipped | [link](https://dokku.com/docs/deployment/methods/image/) |
+| 25 | backup | — | skipped | [link](https://dokku.com/docs/advanced-usage/backup-recovery/) |
+| 26 | app-json | builder.sh | partial | [link](https://dokku.com/docs/appendices/file-formats/app-json/) |
+
+## Statistics
+
+- **Supported:** 11 namespaces (apps, certs, checks, config, docker-options, network, nginx, plugin, ports, proxy, version)
+- **Partial:** 7 namespaces (domains, builder-*, storage, registry, scheduler, logs, app-json)
+- **Planned:** 3 namespaces (ps, resource, cron)
+- **Skipped:** 5 namespaces (git, run, repo, image, backup)
+
+---
+
+## 1. apps — Application Management
+
+**Doc:** https://dokku.com/docs/deployment/application-management/
+**Module:** `lib/apps.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| apps:create | declarative | yes | `ensure_app()` creates if not exists |
+| apps:destroy | imperative | yes | `destroy_app()` with --force |
+| apps:exists | read-only | yes | Used internally for idempotency |
+| apps:list | read-only | no | Not needed for declarative config |
+| apps:report | read-only | no | Could enhance `cmd_ps` |
+| apps:clone | imperative | no | Runtime migration, not declarative |
+| apps:rename | imperative | no | Runtime migration, not declarative |
+| apps:lock | declarative | yes | `ensure_app_locked()` via `locked: true` |
+| apps:unlock | declarative | yes | `ensure_app_locked()` via `locked: false` |
+
+### YAML Keys
+
+```yaml
+apps:
+  myapp:
+    locked: true   # apps:lock; false = apps:unlock; absent = no action
+```
+
+### Gaps in Existing Code
+
+None. All declarative commands are supported.
+
+### Decision
+
+**Supported.** Core create/destroy lifecycle is fully implemented. Lock/unlock driven by `locked:` key with tri-state behavior (true/false/absent). Vhost handling moved to `lib/domains.sh`. Imperative commands (clone, rename) are intentionally out of scope.
+
+---
+
+## 2. domains — Domain Configuration
+
+**Doc:** https://dokku.com/docs/configuration/domains/
+**Module:** `lib/domains.sh`
+**Status:** partial
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| domains:add | declarative | no | Incremental; `domains:set` is used instead |
+| domains:remove | declarative | no | Incremental; `domains:set` replaces all |
+| domains:set | declarative | yes | `ensure_app_domains()` replaces all domains atomically |
+| domains:clear | declarative | yes | `ensure_app_domains()` via `domains: false`, `destroy_app_domains()` |
+| domains:enable | declarative | yes | Called when `domains:` list is present |
+| domains:disable | declarative | yes | Called when `domains: false` |
+| domains:report | read-only | no | Could enable idempotency checks |
+| domains:add-global | declarative | no | Incremental; `domains:set-global` is used instead |
+| domains:remove-global | declarative | no | Incremental; `domains:set-global` replaces all |
+| domains:set-global | declarative | yes | `ensure_global_domains()` replaces all global domains |
+| domains:clear-global | declarative | yes | `ensure_global_domains()` via top-level `domains: false` |
+
+### YAML Keys
+
+```yaml
+domains:                        # top-level: list = set-global; false = clear-global; absent = no action
+  - example.com
+
+apps:
+  myapp:
+    domains:                    # per-app: list = enable + set; false = disable + clear; absent = no action
+      - myapp.example.com
+      - www.example.com
+```
+
+### Gaps in Existing Code
+
+- No idempotency check — re-sets domains every run.
+
+### Decision
+
+**Partial.** Per-app domain management: `domains:set` for atomic convergence, `domains:enable`/`domains:disable` driven by value (list/false), `destroy_app_domains()` for teardown. Global domain management: `domains:set-global`/`domains:clear-global` via top-level `domains:`. Absent key = no action (consistent tri-state). Gap: no idempotency.
+
+---
+
+## 3. config — Environment Variables
+
+**Doc:** https://dokku.com/docs/configuration/environment-variables/
+**Module:** `lib/config.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| config:set | declarative | yes | `ensure_app_config()` / `ensure_global_config()` with --no-restart |
+| config:unset | declarative | yes | Convergence: unsets orphaned vars matching `env_prefix` |
+| config:show | read-only | no | Not needed |
+| config:get | read-only | no | Not needed |
+| config:keys | read-only | yes | Used internally for prefix convergence |
+| config:export | read-only | no | Not needed |
+| config:clear | declarative | no | Not used — `env: false` converges via `config:unset` instead |
+
+### YAML Keys
+
+```yaml
+dokku:
+  env_prefix: "MYCO_"           # default prefix is "APP_"
+
+env:                             # top-level: global env vars
+  APP_GLOBAL_KEY: value
+
+apps:
+  myapp:
+    env:                         # per-app: map = set + converge; false = unset all prefixed; absent = no action
+      APP_ENV: production
+      APP_SECRET: "${SECRET_KEY}"
+```
+
+### Gaps in Existing Code
+
+- No idempotency check — re-sets all vars every run (functionally harmless but noisy).
+
+### Decision
+
+**Supported.** App and global `config:set` with --no-restart. Only vars matching the prefix (default `APP_`) are managed — non-matching vars are warned and skipped. Orphaned prefixed vars are automatically unset. `env: false` unsets all prefixed vars. `${VAR}` references resolved via `envsubst`.
+
+---
+
+## 4. certs — SSL Configuration
+
+**Doc:** https://dokku.com/docs/configuration/ssl/
+**Module:** `lib/certs.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| certs:add | declarative | yes | Tars certfile + keyfile as server.crt/server.key; idempotent via certs:report |
+| certs:update | declarative | no | Functionally identical to certs:add; not needed separately |
+| certs:remove | declarative | yes | Called when `ssl: false` or during `down` |
+| certs:generate | imperative | no | Interactive self-signed cert; not declarative |
+| certs:report | read-only | yes | Used for idempotency check (--ssl-enabled) |
+| certs:show | read-only | no | Export cert; not needed |
+
+### YAML Keys
+
+- `ssl: {certfile: ..., keyfile: ...}` — adds SSL cert (idempotent, skips if already enabled)
+- `ssl: false` — removes SSL cert (idempotent, skips if already disabled)
+- absent — no action
+
+### Decision
+
+**Supported.** Map/false/absent pattern with idempotency via `certs:report --ssl-enabled`. YAML key is `ssl` (not `certs`) for readability. Supports `certs:add` (map), `certs:remove` (false), and `destroy_app_certs` for `down`.
+
+---
+
+## 5. network — Network Management
+
+**Doc:** https://dokku.com/docs/networking/network/
+**Module:** `lib/network.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| network:create | declarative | yes | Creates from top-level `networks:` list |
+| network:destroy | declarative | yes | `destroy_networks()` in down path |
+| network:exists | read-only | yes | Idempotency check before create/destroy |
+| network:set | declarative | yes | All 4 relevant properties implemented |
+| network:rebuild | imperative | no | Runtime action |
+| network:report | read-only | no | Could check network:set state |
+
+### network:set Properties
+
+| Property | Supported | Notes |
+|----------|-----------|-------|
+| attach-post-deploy | yes | Set via `apps.<app>.networks` list |
+| attach-post-create | yes | Set via `apps.<app>.network.attach_post_create` |
+| initial-network | yes | Set via `apps.<app>.network.initial_network` |
+| bind-all-interfaces | yes | Set via `apps.<app>.network.bind_all_interfaces` |
+| static-web-listener | no | Not confirmed as a `network:set` property in Dokku docs |
+| tld | yes | Set via `apps.<app>.network.tld` |
+
+### YAML Keys
+
+```yaml
+networks:
+  - backend-net                    # top-level: list = create; absent = no action
+
+apps:
+  myapp:
+    networks:                      # list = attach-post-deploy; absent = no action
+      - backend-net
+    network:                       # map for other network:set properties
+      attach_post_create:          # list = set; false = clear; absent = no action
+        - init-net
+      initial_network: custom-bridge  # string = set; false = clear; absent = no action
+      bind_all_interfaces: true    # true/false = set; absent = no action
+      tld: internal                # string = set; false = clear; absent = no action
+```
+
+### Gaps in Existing Code
+
+- No idempotency check on `ensure_app_networks` or `ensure_app_network` — re-sets every run.
+
+### Decision
+
+**Supported.** All 4 relevant `network:set` properties implemented via new `network:` map. Teardown path added: `destroy_app_network()` clears per-app settings, `destroy_networks()` destroys global networks. `static-web-listener` excluded — not confirmed as a `network:set` property in Dokku docs.
+
+---
+
+## 6. ports — Port Management
+
+**Doc:** https://dokku.com/docs/networking/port-management/
+**Module:** `lib/ports.sh`
+**Status:** partial
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| ports:set | declarative | yes | Replaces all port mappings from YAML |
+| ports:report | read-only | yes | Used for idempotency check |
+| ports:add | declarative | no | Incremental; ports:set is better for declarative |
+| ports:remove | declarative | no | Incremental; ports:set replaces all |
+| ports:clear | declarative | yes | Used in destroy_app_ports (down path) |
+| ports:list | read-only | no | Diagnostic only |
+
+### YAML Keys
+
+No new keys needed. Existing `ports: ["https:443:4000"]` works well with `ports:set` replace-all semantics.
+
+### Gaps in Existing Code
+
+None remaining.
+
+### Decision
+
+**Supported.** Declarative set with order-insensitive idempotency check. Teardown clears port mappings via `ports:clear`.
+
+---
+
+## 7. nginx — Nginx Proxy Configuration
+
+**Doc:** https://dokku.com/docs/networking/proxies/nginx/
+**Module:** `lib/nginx.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| nginx:set | declarative | yes | Per-app and global key-value passthrough from YAML map |
+| nginx:report | read-only | no | Diagnostic only |
+| nginx:show-config | read-only | no | Diagnostic |
+| nginx:validate-config | imperative | no | Could be a safety check post-config |
+| nginx:access-logs | read-only | no | Log viewer |
+| nginx:error-logs | read-only | no | Log viewer |
+| nginx:start / stop | imperative | no | Service management |
+
+### YAML Keys
+
+```yaml
+nginx:                           # top-level: global nginx defaults
+  client-max-body-size: "50m"
+  hsts: "true"
+
+apps:
+  myapp:
+    nginx:                       # per-app: overrides global defaults
+      client-max-body-size: "15m"
+      proxy-read-timeout: "120s"
+```
+
+### Gaps in Existing Code
+
+- No idempotency check — re-sets all nginx properties every run (harmless but noisy).
+- No `proxy:build-config` trigger after changes (same gap exists in ports module; broader design decision).
+
+### Decision
+
+**Supported.** Generic passthrough for all `nginx:set` properties, both per-app and global (`--global`). Teardown resets each configured property to Dokku defaults via empty-value `nginx:set`. Remaining gaps (idempotency, `proxy:build-config`) are intentionally deferred.
+
+---
+
+## 8. builder-* — Builder Management
+
+**Doc:** https://dokku.com/docs/deployment/builders/builder-management/
+**Module:** `lib/builder.sh`
+**Status:** partial
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| builder:set selected | declarative | no | Opinionated: dockerfile-only |
+| builder:set build-dir | declarative | yes | Via `build.context` YAML key |
+| builder-dockerfile:set dockerfile-path | declarative | yes | Via `build.dockerfile` YAML key |
+| builder-herokuish:set allowed | declarative | no | Opinionated: dockerfile-only |
+| builder-pack:set projecttoml-path | declarative | no | Opinionated: dockerfile-only |
+| builder-nixpacks:set nixpackstoml-path | declarative | no | Opinionated: dockerfile-only |
+| builder-railpack:set railpackjson-path | declarative | no | Opinionated: dockerfile-only |
+| builder-lambda:set lambdayml-path | declarative | no | Opinionated: dockerfile-only |
+
+### YAML Keys
+
+```yaml
+apps:
+  myapp:
+    build:                            # all build config nested here
+      context: apps/myapp             # builder:set build-dir
+      dockerfile: path/to/Dockerfile  # builder-dockerfile:set dockerfile-path
+      app_json: docker/prod/app.json  # app-json:set appjson-path
+      args:                           # docker-options:add --build-arg (convenience)
+        KEY: value
+```
+
+Note: Dockerfile builder is assumed. No `selected` key — opinionated choice to keep things simple. YAML key names follow docker-compose conventions (`build.context`, `build.args`).
+
+### Gaps in Existing Code
+
+- `builder:set selected` not supported — opinionated dockerfile-only.
+- No non-dockerfile builder support — opinionated dockerfile-only.
+
+### Decision
+
+**Partial.** Handles dockerfile path, app_json path, context (maps to `builder:set build-dir`), and build args. All config nested under `build:` key with docker-compose-style naming. Opinionated: assumes dockerfile builder, no `selected` key. Non-dockerfile builder settings intentionally excluded.
+
+---
+
+## 9. docker-options — Docker Container Options
+
+**Doc:** https://dokku.com/docs/advanced-usage/docker-options/
+**Module:** `lib/docker_options.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| docker-options:add | declarative | yes | Adds per-phase options after clearing |
+| docker-options:remove | declarative | no | Not needed — clear+add provides convergence |
+| docker-options:clear | declarative | yes | Clears phase before re-adding declared options |
+| docker-options:report | read-only | no | Not needed — clear+add is idempotent |
+
+### YAML Keys
+
+```yaml
+apps:
+  myapp:
+    docker_options:
+      build:
+        - "--no-cache"
+      deploy:
+        - "--shm-size 256m"
+        - "-v /host/path:/container/path"
+      run:
+        - "--ulimit nofile=12"
+```
+
+Each declared phase is cleared then re-populated, providing idempotency and convergence. Undeclared phases are untouched.
+
+### Gaps in Existing Code
+
+None. Clear+add pattern provides idempotency and convergence.
+
+### Decision
+
+**Supported.** Declares arbitrary per-phase docker options (build, deploy, run). Each phase is atomically cleared and re-populated for idempotent convergence.
+
+---
+
+## 10. plugin — Plugin Management
+
+**Doc:** https://dokku.com/docs/advanced-usage/plugin-management/
+**Module:** `lib/plugins.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| plugin:install | declarative | yes | With `--committish` version pinning and `--name` from YAML key |
+| plugin:installed | read-only | yes | Used for per-plugin presence check |
+| plugin:list | read-only | yes | Used to read installed version for comparison |
+| plugin:update | declarative | yes | Called when installed version differs from declared version |
+| plugin:uninstall | imperative | no | Rare destructive operation |
+| plugin:enable / disable | declarative | no | Niche; most users install or don't |
+
+### Gaps in Existing Code
+
+- No `plugin:enable`/`plugin:disable` (low priority).
+
+### Decision
+
+**Supported.** Full declarative lifecycle: install on first run, update when version changes, skip when current. Missing commands are either imperative or niche.
+
+---
+
+## 11. version — Dokku Version Management
+
+**Doc:** https://dokku.com/docs/getting-started/installation/
+**Module:** `lib/dokku.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| version | read-only | yes | Used by `ensure_dokku_version()` |
+
+### Gaps in Existing Code
+
+- `ensure_dokku_version()` only warns on mismatch, never fails. No strict enforcement option.
+- `install_dokku()` is Debian/Ubuntu-only and doesn't use `dokku_cmd()` wrapper (not testable via BATS mocks).
+- No automated upgrade path.
+
+### Decision
+
+**Supported.** Correctly implemented for its use case (pre-flight version check + fresh install).
+
+---
+
+## 12. git — Git Deployment
+
+**Doc:** https://dokku.com/docs/deployment/methods/git/
+**Module:** `lib/git.sh` (stub)
+**Status:** skipped
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| git:set deploy-branch | declarative | no | Infrastructure config, but low priority |
+| git:set keep-git-dir | declarative | no | Infrastructure config, but low priority |
+| git:set rev-env-var | declarative | no | Infrastructure config, but low priority |
+| git:sync | imperative | no | Deployment action, out of scope |
+| git:from-image | imperative | no | Deployment action, out of scope |
+| git:from-archive | imperative | no | Deployment action, out of scope |
+| git:auth | declarative | no | Credential management, sensitive |
+| git:allow-host | declarative | no | Server-level setup |
+
+### Decision
+
+**Skipped.** Correct architectural decision: dokku-compose handles infrastructure config, deployment is separate. The three `git:set` properties are genuinely declarative but low priority (sensible defaults, rarely changed). Could be reconsidered in a future pass.
+
+---
+
+## 13. proxy — Proxy Management
+
+**Doc:** https://dokku.com/docs/networking/proxy-management/
+**Module:** `lib/proxy.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| proxy:set | declarative | yes | `ensure_app_proxy()` via `proxy.type` |
+| proxy:disable | declarative | yes | `ensure_app_proxy()` when `enabled: false` or `proxy: false` |
+| proxy:enable | declarative | yes | `ensure_app_proxy()` when `enabled: true` or `proxy: true` |
+| proxy:build-config | imperative | no | Intentionally deferred (same as nginx module) |
+| proxy:clear-config | imperative | no | Imperative operation, out of scope |
+| proxy:report | read-only | yes | Used for idempotency checks |
+
+### YAML Keys
+
+```yaml
+apps:
+  # Shorthand: just enable or disable
+  myapp:
+    proxy: true               # proxy:enable
+
+  worker-app:
+    proxy: false              # proxy:disable -- no web traffic
+
+  # Map form: enable/disable + set proxy type
+  caddy-app:
+    proxy:
+      enabled: true           # proxy:enable / proxy:disable
+      type: caddy             # proxy:set caddy-app caddy
+```
+
+### Gaps in Existing Code
+
+- No `proxy:build-config` trigger after nginx/ports changes (intentionally deferred; same gap exists in the nginx module).
+
+### Decision
+
+**Supported.** Enable/disable proxy and proxy type selection are implemented with full idempotency. `proxy:build-config` and `proxy:clear-config` are imperative operations intentionally deferred.
+
+---
+
+## 14. ps — Process Management
+
+**Doc:** https://dokku.com/docs/processes/process-management/
+**Module:** No module exists. New: `lib/ps.sh`
+**Status:** planned
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| ps:set restart-policy | declarative | no | Per-app restart policy |
+| ps:set procfile-path | declarative | no | Custom Procfile path |
+| ps:set stop-timeout-seconds | declarative | no | Stop timeout |
+| ps:scale web=N worker=N | declarative | no | Process formation / scaling |
+| ps:start / stop / restart / rebuild | imperative | no | Runtime actions |
+| ps:report | read-only | no | Display process report |
+
+### Proposed YAML Keys
+
+```yaml
+apps:
+  myapp:
+    ps:
+      restart_policy: "on-failure:10"
+      procfile_path: "src/Procfile"
+      stop_timeout_seconds: 30
+    scale:
+      web: 1
+      worker: 2
+```
+
+### Decision
+
+**Planned.** `ps:scale` (process formation) and `ps:set` (restart policy, procfile path, stop timeout) are high-priority declarative settings. `scale:` kept separate from `ps:` because it uses different command syntax.
+
+---
+
+## 15. storage — Persistent Storage
+
+**Doc:** https://dokku.com/docs/advanced-usage/persistent-storage/
+**Module:** `lib/storage.sh`
+**Status:** partial
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| storage:ensure-directory | declarative | no | Creates storage directory with correct ownership |
+| storage:mount | declarative | yes | `ensure_app_storage()` mounts from YAML list |
+| storage:unmount | declarative | yes | `destroy_app_storage()` unmounts declared volumes |
+| storage:list | read-only | no | Not used (uses `storage:report` instead) |
+| storage:report | read-only | yes | Used for idempotency check |
+
+### YAML Keys
+
+```yaml
+apps:
+  myapp:
+    storage:
+      - "/var/lib/dokku/data/storage/myapp/uploads:/app/uploads"
+      - "/var/lib/dokku/data/storage/myapp/data:/app/data"
+```
+
+Note: Simplified to a flat list of mount strings (not nested `mounts:`/`ensure_directories:` as originally proposed).
+
+### Gaps in Existing Code
+
+- No `storage:ensure-directory` support. Not needed for Dockerfile deployments (Dokku's chown options target buildpack process types; Dockerfile users manage directory ownership themselves).
+
+### Decision
+
+**Partial.** Mount and unmount implemented with full convergence: stale mounts (present in Dokku but removed from YAML) are unmounted; new mounts are added; existing mounts are skipped. Remaining gap: `storage:ensure-directory` intentionally skipped for Dockerfile-only deployments.
+
+---
+
+## 16. resource — Resource Management
+
+**Doc:** https://dokku.com/docs/advanced-usage/resource-management/
+**Module:** No module exists. New: `lib/resource.sh`
+**Status:** planned
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| resource:limit | declarative | no | CPU/memory upper bounds per process type |
+| resource:limit-clear | declarative | no | Clear limits; needed for destroy |
+| resource:reserve | declarative | no | CPU/memory minimum reservations |
+| resource:reserve-clear | declarative | no | Clear reservations |
+| resource:report | read-only | no | Current resource config |
+
+### Proposed YAML Keys
+
+```yaml
+apps:
+  myapp:
+    resources:
+      limits:
+        cpu: 2
+        memory: "512m"
+      reservations:
+        memory: "256m"
+      web:                    # per-process-type overrides
+        limits:
+          cpu: 2
+          memory: "1g"
+```
+
+### Decision
+
+**Planned.** Resource limits/reservations are fully declarative and high-priority for production deployments. Nested structure mirrors Dokku's default + per-process-type granularity.
+
+---
+
+## 17. registry — Registry Management
+
+**Doc:** https://dokku.com/docs/advanced-usage/registry-management/
+**Module:** `lib/registry.sh`
+**Status:** partial
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| registry:set | declarative | yes | `ensure_app_registry()` via `dokku_set_properties` helper |
+| registry:login | imperative | no | Credentials; must NOT be in YAML |
+| registry:logout | imperative | no | Runtime action |
+| registry:report | read-only | no | Could enable idempotency |
+
+### YAML Keys
+
+```yaml
+apps:
+  myapp:
+    registry:
+      push-on-release: true
+      image-repo: "my-prefix/myapp"
+      server: "registry.example.com"
+```
+
+### Gaps in Existing Code
+
+- No idempotency check — re-sets all properties every run.
+- No global registry settings.
+
+### Decision
+
+**Partial.** Per-app `registry:set` properties implemented via key-value passthrough helper. Gaps: no idempotency, no global support.
+
+---
+
+## 18. scheduler — Scheduler Management
+
+**Doc:** https://dokku.com/docs/deployment/schedulers/scheduler-management/
+**Module:** `lib/scheduler.sh`
+**Status:** partial
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| scheduler:set selected | declarative | yes | `ensure_app_scheduler()` via `dokku_set_property` helper |
+| scheduler:report | read-only | no | Could enable idempotency |
+
+### YAML Keys
+
+```yaml
+apps:
+  myapp:
+    scheduler: docker-local    # per-app override
+```
+
+### Gaps in Existing Code
+
+- No idempotency check — re-sets every run.
+- No global scheduler default (`dokku.scheduler`).
+
+### Decision
+
+**Partial.** Per-app scheduler selection implemented. Gaps: no idempotency, no global default.
+
+---
+
+## 19. checks — Zero Downtime Deploy Checks
+
+**Doc:** https://dokku.com/docs/deployment/zero-downtime-deploys/
+**Module:** `lib/checks.sh`
+**Status:** supported
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| checks:set wait-to-retire | declarative | yes | Idempotent via `checks:report` |
+| checks:set attempts | declarative | yes | Idempotent via `checks:report` |
+| checks:set timeout | declarative | yes | Idempotent via `checks:report` |
+| checks:set wait | declarative | yes | Idempotent via `checks:report` |
+| checks:disable | declarative | yes | Per-process-type or all via `checks: false` |
+| checks:enable | declarative | yes | Via `disabled: false` or `skipped: false` |
+| checks:skip | declarative | yes | Per-process-type skip |
+| checks:run | imperative | no | Manual healthcheck trigger |
+| checks:report | read-only | yes | Used for idempotency checks |
+
+### YAML Keys
+
+```yaml
+apps:
+  myapp:
+    checks:
+      wait-to-retire: 60             # checks:set property (idempotent)
+      attempts: 5                    # checks:set property (idempotent)
+      timeout: 10                    # checks:set property (idempotent)
+      wait: 5                       # checks:set property (idempotent)
+      disabled:                      # checks:disable per process type
+        - worker
+      skipped:                       # checks:skip per process type
+        - cron
+
+  otherapp:
+    checks: false                    # checks:disable (all process types)
+
+  resetapp:
+    checks:
+      disabled: false                # checks:enable (re-enable all)
+      skipped: false                 # checks:enable (clear skipped list)
+```
+
+### Gaps in Existing Code
+
+None. All declarative commands are supported with idempotency.
+
+### Decision
+
+**Supported.** Properties set via `checks:set` with idempotency via `checks:report`. Per-process-type `checks:disable`/`checks:skip`/`checks:enable` supported via `disabled`/`skipped` sub-keys with list/false/absent tri-state pattern.
+
+---
+
+## 20. logs — Log Management
+
+**Doc:** https://dokku.com/docs/deployment/logs/
+**Module:** `lib/logs.sh`
+**Status:** partial
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| logs:set | declarative | yes | `ensure_app_logs()` and `ensure_global_logs()` via map passthrough |
+| logs:report | read-only | no | Could enable idempotency |
+| logs / logs:failed | imperative | no | Log viewers |
+| logs:vector-start / stop | imperative | no | Vector container management |
+
+### YAML Keys
+
+```yaml
+logs:                          # top-level: map = set global properties; absent = no action
+  max-size: "50m"
+  vector-image: "timberio/vector:0.36.0-alpine"
+  vector-sink: "console://?encoding[codec]=json"
+  app-label-alias: "app"
+
+apps:
+  myapp:
+    logs:                      # per-app: map = set properties; absent = no action
+      max-size: "10m"
+      vector-sink: "file://?path=/tmp/app.log"
+```
+
+### Gaps in Existing Code
+
+- No idempotency check — re-sets all properties every run.
+
+### Decision
+
+**Partial.** Per-app `logs:set` and global `logs:set --global` properties implemented via key-value map passthrough. `ensure_global_logs()` wired into Phase 3 (global config). Gap: no idempotency.
+
+---
+
+## 21. cron — Scheduled Cron Tasks
+
+**Doc:** https://dokku.com/docs/processes/scheduled-cron-tasks/
+**Module:** No module exists. New: `lib/cron.sh`
+**Status:** planned
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| cron:set mailto/mailfrom | declarative | no | Global mail settings only |
+| cron:report | read-only | no | Cron config |
+| cron:list | read-only | no | List cron tasks (defined in app.json) |
+| cron:run / suspend / resume | imperative | no | Runtime actions |
+
+### Proposed YAML Keys
+
+```yaml
+cron:                          # global only
+  mailto: "alerts@example.com"
+  mailfrom: "dokku@example.com"
+```
+
+Note: Cron task definitions live in `app.json`, already supported via the existing `app_json` key. Only global mail properties are configurable via `cron:set`.
+
+### Decision
+
+**Planned** (minimal scope). Only global `cron:set` (mailto, mailfrom). Task definitions come from app.json.
+
+---
+
+## 22. run — One-off Tasks
+
+**Doc:** https://dokku.com/docs/processes/one-off-tasks/
+**Module:** Skipped
+**Status:** skipped
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| run | imperative | no | One-off command in new container |
+| run:detached | imperative | no | Detached one-off |
+| run:list / logs / stop | read-only/imperative | no | Container management |
+
+### Decision
+
+**Skipped.** All commands are purely imperative or read-only. No persistent state to declare.
+
+---
+
+## 23. repo — Repository Management
+
+**Doc:** https://dokku.com/docs/advanced-usage/repository-management/
+**Module:** Skipped
+**Status:** skipped
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| repo:gc | imperative | no | Git garbage collection |
+| repo:purge-cache | imperative | no | Clear build cache |
+
+### Decision
+
+**Skipped.** Both are imperative maintenance operations. No declarative state to model.
+
+---
+
+## 24. image — Docker Image Deployment
+
+**Doc:** https://dokku.com/docs/deployment/methods/image/
+**Module:** Skipped (exclusion documented in `lib/git.sh`)
+**Status:** skipped
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| git:from-image | imperative | no | Triggers a deploy from Docker image |
+
+### Decision
+
+**Skipped.** Deployment trigger, not infrastructure config. Explicitly out of scope per `lib/git.sh` design note.
+
+---
+
+## 25. backup — Backup and Recovery
+
+**Doc:** https://dokku.com/docs/advanced-usage/backup-recovery/
+**Module:** Skipped
+**Status:** skipped
+
+### Commands
+
+No formal Dokku command namespace. Describes manual `tar` backup/restore procedures and `ssh-keys:*` commands.
+
+### Decision
+
+**Skipped.** No built-in backup commands. Manual tar procedures belong to external backup tooling, not declarative config.
+
+---
+
+## 26. app-json — app.json File Format
+
+**Doc:** https://dokku.com/docs/appendices/file-formats/app-json/
+**Module:** `lib/builder.sh` (embedded)
+**Status:** partial
+
+### Commands
+
+| Command | Type | Supported | Notes |
+|---------|------|-----------|-------|
+| app-json:set appjson-path | declarative | yes | Via `build.app_json` YAML key |
+| app-json:report | read-only | no | Could enable idempotency |
+
+### Gaps in Existing Code
+
+- No idempotency check: `app-json:set` called unconditionally.
+- Lives inside `ensure_app_builder()` rather than its own function.
+- No destroy path to clear the setting.
+
+### Decision
+
+**Partial.** The only CLI command that matters (`app-json:set appjson-path`) is implemented. Gap is code quality (idempotency, destroy). The app.json file contents (scripts, formation, cron) are app-level config in the repo, not dokku-compose YAML.
