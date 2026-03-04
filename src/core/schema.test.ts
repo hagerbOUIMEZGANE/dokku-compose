@@ -1,6 +1,23 @@
 import { describe, it, expect } from 'vitest'
 import { parseConfig } from './schema.js'
 
+describe('git config in schema', () => {
+  it('accepts global git.deploy_branch', () => {
+    const result = parseConfig({
+      apps: {},
+      git: { deploy_branch: 'main' },
+    })
+    expect(result.git?.deploy_branch).toBe('main')
+  })
+
+  it('accepts per-app git.deploy_branch', () => {
+    const result = parseConfig({
+      apps: { myapp: { git: { deploy_branch: 'develop' } } },
+    })
+    expect(result.apps.myapp.git?.deploy_branch).toBe('develop')
+  })
+})
+
 describe('ServiceSchema backup', () => {
   it('accepts a service with backup config', () => {
     const result = parseConfig({

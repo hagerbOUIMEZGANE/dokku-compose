@@ -18,6 +18,10 @@ const ChecksSchema = z.union([
   }).catchall(z.union([z.string(), z.number(), z.boolean()]))
 ])
 
+const GitSchema = z.object({
+  deploy_branch: z.string().optional(),
+})
+
 const AppSchema = z.object({
   domains: z.union([z.array(z.string()), z.literal(false)]).optional(),
   links: z.array(z.string()).optional(),
@@ -53,6 +57,7 @@ const AppSchema = z.object({
     deploy: z.array(z.string()).optional(),
     run: z.array(z.string()).optional(),
   }).optional(),
+  git: GitSchema.optional(),
 })
 
 const ServiceBackupAuthSchema = z.object({
@@ -93,6 +98,7 @@ export const ConfigSchema = z.object({
   env: EnvMapSchema.optional(),
   nginx: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   logs: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+  git: GitSchema.optional(),
 })
 
 export type Config = z.infer<typeof ConfigSchema>
@@ -100,6 +106,7 @@ export type AppConfig = z.infer<typeof AppSchema>
 export type ServiceConfig = z.infer<typeof ServiceSchema>
 export type ServiceBackupConfig = z.infer<typeof ServiceBackupSchema>
 export type PluginConfig = z.infer<typeof PluginSchema>
+export type GitConfig = z.infer<typeof GitSchema>
 
 export function parseConfig(raw: unknown): Config {
   return ConfigSchema.parse(raw)
