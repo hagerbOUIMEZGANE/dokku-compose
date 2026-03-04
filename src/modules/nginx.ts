@@ -6,8 +6,17 @@ export async function ensureAppNginx(
   app: string,
   nginx: Record<string, string | number>
 ): Promise<void> {
+  const current = await exportAppNginx(runner, app) ?? {}
+  let changed = false
+
   for (const [key, value] of Object.entries(nginx)) {
+    if (String(value) === current[key]) continue
     await runner.run('nginx:set', app, key, String(value))
+    changed = true
+  }
+
+  if (changed) {
+    await runner.run('proxy:build-config', app)
   }
 }
 
