@@ -19,6 +19,34 @@ describe('ensureServices', () => {
     await ensureServices(runner, { 'api-postgres': { plugin: 'postgres' } })
     expect(runner.run).not.toHaveBeenCalled()
   })
+
+  it('passes --image flag when image specified', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.check = vi.fn().mockResolvedValue(false)
+    runner.run = vi.fn()
+    await ensureServices(runner, { 'funqtion-db': { plugin: 'postgres', image: 'postgis/postgis' } })
+    expect(runner.run).toHaveBeenCalledWith('postgres:create', 'funqtion-db', '--image', 'postgis/postgis')
+  })
+
+  it('passes --image-version flag when version specified', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.check = vi.fn().mockResolvedValue(false)
+    runner.run = vi.fn()
+    await ensureServices(runner, { 'funqtion-db': { plugin: 'postgres', version: '17-3.5' } })
+    expect(runner.run).toHaveBeenCalledWith('postgres:create', 'funqtion-db', '--image-version', '17-3.5')
+  })
+
+  it('passes both --image and --image-version when both specified', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.check = vi.fn().mockResolvedValue(false)
+    runner.run = vi.fn()
+    await ensureServices(runner, {
+      'funqtion-db': { plugin: 'postgres', image: 'postgis/postgis', version: '17-3.5' }
+    })
+    expect(runner.run).toHaveBeenCalledWith(
+      'postgres:create', 'funqtion-db', '--image', 'postgis/postgis', '--image-version', '17-3.5'
+    )
+  })
 })
 
 describe('ensureAppLinks', () => {

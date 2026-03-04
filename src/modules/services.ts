@@ -10,7 +10,10 @@ export async function ensureServices(
     logAction('services', `Ensuring ${name}`)
     const exists = await runner.check(`${config.plugin}:exists`, name)
     if (exists) { logSkip(); continue }
-    await runner.run(`${config.plugin}:create`, name)
+    const args: string[] = [`${config.plugin}:create`, name]
+    if (config.image) args.push('--image', config.image)
+    if (config.version) args.push('--image-version', config.version)
+    await runner.run(...args)
     logDone()
   }
 }
