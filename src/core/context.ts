@@ -9,6 +9,8 @@ export interface Context {
   run(...args: string[]): Promise<void>
   /** All commands that were run (or would be in dry-run) */
   commands: string[][]
+  /** The underlying runner (for backward compat during migration) */
+  runner: Runner
   /** Close the underlying SSH connection */
   close(): Promise<void>
 }
@@ -19,6 +21,7 @@ export function createContext(runner: Runner): Context {
 
   return {
     commands,
+    runner,
 
     query(...args: string[]): Promise<string> {
       const key = args.join('\0')

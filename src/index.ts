@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url)
 const { version } = require('../package.json')
 import { loadConfig } from './core/config.js'
 import { createRunner } from './core/dokku.js'
+import { createContext } from './core/context.js'
 import { runUp } from './commands/up.js'
 import { runDown } from './commands/down.js'
 import { runExport } from './commands/export.js'
@@ -33,14 +34,15 @@ program
   .action(async (apps, opts) => {
     const config = loadConfig(opts.file)
     const runner = makeRunner(opts)
+    const ctx = createContext(runner)
     try {
-      await runUp(runner, config, apps)
+      await runUp(ctx, config, apps)
       if (opts.dryRun) {
         console.log('\n# Commands that would run:')
         for (const cmd of runner.dryRunLog) console.log(`dokku ${cmd}`)
       }
     } finally {
-      await runner.close()
+      await ctx.close()
     }
   })
 

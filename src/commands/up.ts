@@ -1,26 +1,27 @@
-import type { Runner } from '../core/dokku.js'
+import type { Context } from '../core/context.js'
 import type { Config } from '../core/schema.js'
-import { ensureApp } from '../modules/apps.js'
-import { ensureAppDomains, ensureGlobalDomains } from '../modules/domains.js'
+import { reconcile } from '../core/reconcile.js'
+import { Apps } from '../resources/lifecycle.js'
+import { Domains, Ports, Storage } from '../resources/lists.js'
+import { Nginx, Logs, Registry, Scheduler } from '../resources/properties.js'
+import { Proxy } from '../resources/toggle.js'
+import { Config as ConfigResource } from '../resources/config.js'
+import { Certs } from '../resources/certs.js'
+import { Builder } from '../resources/builder.js'
+import { DockerOptions } from '../resources/docker-options.js'
+import { Git } from '../resources/git.js'
+import { Checks } from '../resources/checks.js'
+import { Networks, NetworkProps } from '../resources/network.js'
 import { ensurePlugins } from '../modules/plugins.js'
-import { ensureNetworks, ensureAppNetworks, ensureAppNetwork } from '../modules/network.js'
+import { ensureNetworks } from '../modules/network.js'
 import { ensureServices, ensureServiceBackups, ensureAppLinks } from '../modules/services.js'
-import { ensureAppProxy } from '../modules/proxy.js'
-import { ensureAppPorts } from '../modules/ports.js'
-import { ensureAppCerts } from '../modules/certs.js'
-import { ensureAppStorage } from '../modules/storage.js'
-import { ensureAppNginx, ensureGlobalNginx } from '../modules/nginx.js'
-import { ensureAppChecks } from '../modules/checks.js'
-import { ensureAppLogs, ensureGlobalLogs } from '../modules/logs.js'
-import { ensureAppRegistry } from '../modules/registry.js'
-import { ensureAppScheduler } from '../modules/scheduler.js'
-import { ensureAppConfig, ensureGlobalConfig } from '../modules/config.js'
-import { ensureAppBuilder } from '../modules/builder.js'
-import { ensureAppGit } from '../modules/git.js'
-import { ensureAppDockerOptions } from '../modules/docker-options.js'
+import { ensureGlobalDomains } from '../modules/domains.js'
+import { ensureGlobalConfig } from '../modules/config.js'
+import { ensureGlobalLogs } from '../modules/logs.js'
+import { ensureGlobalNginx } from '../modules/nginx.js'
 
 export async function runUp(
-  runner: Runner,
+  ctx: Context,
   config: Config,
   appFilter: string[]
 ): Promise<void> {
@@ -29,43 +30,54 @@ export async function runUp(
     : Object.keys(config.apps)
 
   // Phase 1: Plugins
-  if (config.plugins) await ensurePlugins(runner, config.plugins)
+  if (config.plugins) await ensurePlugins(ctx.runner, config.plugins)
 
-  // Phase 2: Global config
-  if (config.domains !== undefined) await ensureGlobalDomains(runner, config.domains)
-  if (config.env !== undefined) await ensureGlobalConfig(runner, config.env)
-  if (config.logs !== undefined) await ensureGlobalLogs(runner, config.logs)
-  if (config.nginx !== undefined) await ensureGlobalNginx(runner, config.nginx)
+  // Phase 2: Global config (still uses old module functions for now)
+  if (config.domains !== undefined) await ensureGlobalDomains(ctx.runner, config.domains)
+  if (config.env !== undefined) await ensureGlobalConfig(ctx.runner, config.env)
+  if (config.logs !== undefined) await ensureGlobalLogs(ctx.runner, config.logs)
+  if (config.nginx !== undefined) await ensureGlobalNginx(ctx.runner, config.nginx)
 
   // Phase 3: Networks
-  if (config.networks) await ensureNetworks(runner, config.networks)
+  if (config.networks) await ensureNetworks(ctx.runner, config.networks)
 
   // Phase 4: Services
-  if (config.services) await ensureServices(runner, config.services)
-  if (config.services) await ensureServiceBackups(runner, config.services)
+  if (config.services) await ensureServices(ctx.runner, config.services)
+  if (config.services) await ensureServiceBackups(ctx.runner, config.services)
 
   // Phase 5: Per-app
   for (const app of apps) {
     const appConfig = config.apps[app]
     if (!appConfig) continue
-    await ensureApp(runner, app)
-    await ensureAppDomains(runner, app, appConfig.domains)
-    if (config.services) await ensureAppLinks(runner, app, appConfig.links ?? [], config.services)
-    await ensureAppNetworks(runner, app, appConfig.networks)
-    await ensureAppNetwork(runner, app, appConfig.network)
-    if (appConfig.proxy) await ensureAppProxy(runner, app, appConfig.proxy.enabled)
-    if (appConfig.ports) await ensureAppPorts(runner, app, appConfig.ports)
-    if (appConfig.ssl !== undefined) await ensureAppCerts(runner, app, appConfig.ssl)
-    if (appConfig.storage) await ensureAppStorage(runner, app, appConfig.storage)
-    if (appConfig.nginx) await ensureAppNginx(runner, app, appConfig.nginx)
-    if (appConfig.checks !== undefined) await ensureAppChecks(runner, app, appConfig.checks)
-    if (appConfig.logs) await ensureAppLogs(runner, app, appConfig.logs)
-    if (appConfig.registry) await ensureAppRegistry(runner, app, appConfig.registry)
-    if (appConfig.scheduler) await ensureAppScheduler(runner, app, appConfig.scheduler)
-    if (appConfig.env !== undefined) await ensureAppConfig(runner, app, appConfig.env)
-    if (appConfig.build) await ensureAppBuilder(runner, app, appConfig.build)
-    const gitConfig = appConfig.git ?? config.git
-    if (gitConfig) await ensureAppGit(runner, app, gitConfig)
-    if (appConfig.docker_options) await ensureAppDockerOptions(runner, app, appConfig.docker_options)
+
+    // Lifecycle
+    await reconcile(Apps, ctx, app, true)
+
+    // Networking
+    await reconcile(Domains, ctx, app, appConfig.domains)
+    await reconcile(Networks, ctx, app, appConfig.networks)
+    await reconcile(NetworkProps, ctx, app, appConfig.network)
+    await reconcile(Proxy, ctx, app, appConfig.proxy?.enabled)
+    await reconcile(Ports, ctx, app, appConfig.ports)
+
+    // Links (between networking and config)
+    if (config.services) {
+      await ensureAppLinks(ctx.runner, app, appConfig.links ?? [], config.services)
+    }
+
+    // Configuration
+    await reconcile(Certs, ctx, app, appConfig.ssl)
+    await reconcile(Storage, ctx, app, appConfig.storage)
+    await reconcile(Nginx, ctx, app, appConfig.nginx)
+    await reconcile(Checks, ctx, app, appConfig.checks)
+    await reconcile(Logs, ctx, app, appConfig.logs)
+    await reconcile(Registry, ctx, app, appConfig.registry)
+    await reconcile(Scheduler, ctx, app, appConfig.scheduler)
+    await reconcile(ConfigResource, ctx, app, appConfig.env)
+
+    // Build
+    await reconcile(Builder, ctx, app, appConfig.build)
+    await reconcile(Git, ctx, app, appConfig.git ?? config.git)
+    await reconcile(DockerOptions, ctx, app, appConfig.docker_options)
   }
 }
