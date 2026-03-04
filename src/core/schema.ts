@@ -55,10 +55,25 @@ const AppSchema = z.object({
   }).optional(),
 })
 
+const ServiceBackupAuthSchema = z.object({
+  access_key_id: z.string(),
+  secret_access_key: z.string(),
+  region: z.string(),
+  signature_version: z.string(),
+  endpoint: z.string(),
+})
+
+const ServiceBackupSchema = z.object({
+  schedule: z.string(),
+  bucket: z.string(),
+  auth: ServiceBackupAuthSchema,
+})
+
 const ServiceSchema = z.object({
   plugin: z.string(),
   version: z.string().optional(),
   image: z.string().optional(),
+  backup: ServiceBackupSchema.optional(),
 })
 
 const PluginSchema = z.object({
@@ -83,6 +98,7 @@ export const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>
 export type AppConfig = z.infer<typeof AppSchema>
 export type ServiceConfig = z.infer<typeof ServiceSchema>
+export type ServiceBackupConfig = z.infer<typeof ServiceBackupSchema>
 export type PluginConfig = z.infer<typeof PluginSchema>
 
 export function parseConfig(raw: unknown): Config {
