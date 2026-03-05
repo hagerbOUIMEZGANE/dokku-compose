@@ -43,15 +43,28 @@ export function parseReport(raw: string, namespace: string): Record<string, stri
  * Splits on "=====> <app> <namespace> information" headers, then delegates
  * each section to parseReport.
  */
-export function parseBulkReport(raw: string, namespace: string): Map<string, Record<string, string>> {
+/**
+ * Parse bulk Dokku report output (all apps) into a Map of app -> key-value maps.
+ * Splits on "=====> <app> <header> information" headers, then delegates
+ * each section to parseReport.
+ *
+ * @param namespace - Used for stripping key prefixes in parseReport
+ * @param headerNamespace - Used for matching the header line (defaults to namespace).
+ *   Needed when the header uses a different word than the key prefix (e.g. header
+ *   says "certs information" but keys start with "Ssl").
+ */
+export function parseBulkReport(raw: string, namespace: string, headerNamespace?: string): Map<string, Record<string, string>> {
   const result = new Map<string, Record<string, string>>()
   const sections = raw.split(/(?=^=====> )/m).filter(s => s.trim())
+  // Build regex that matches the namespace in the header (hyphens may be spaces)
+  const nsPattern = (headerNamespace ?? namespace).replace(/-/g, '[\\s-]')
+  const headerRe = new RegExp(`^=====> (.+?)\\s+${nsPattern}\\s+information`, 'i')
 
   for (const section of sections) {
     const headerEnd = section.indexOf('\n')
     if (headerEnd === -1) continue
     const header = section.slice(0, headerEnd)
-    const match = header.match(/^=====> (.+?)\s+\S+\s+information/)
+    const match = header.match(headerRe)
     if (!match) continue
     const app = match[1]
     result.set(app, parseReport(section, namespace))

@@ -100,6 +100,18 @@ describe('parseBulkReport', () => {
     expect(parseBulkReport('', 'nginx').size).toBe(0)
   })
 
+  it('handles multi-word namespaces like docker-options', () => {
+    const raw = `=====> qultr docker options information
+       Docker options build:          --shm-size 256m
+       Docker options deploy:         --restart=on-failure:10
+       Docker options run:`
+    const result = parseBulkReport(raw, 'docker-options')
+    expect(result.get('qultr')).toEqual({
+      'build': '--shm-size 256m',
+      'deploy': '--restart=on-failure:10',
+    })
+  })
+
   it('skips computed and global keys same as parseReport', () => {
     const raw = `=====> app1 nginx information
        Nginx computed hsts:             true
