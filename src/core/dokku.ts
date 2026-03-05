@@ -48,11 +48,6 @@ export function createRunner(opts: RunnerOptions = {}): Runner {
         const result = await execa('dokku', args)
         return { stdout: result.stdout, ok: true }
       } catch (e: any) {
-        if (process.env.DOKKU_COMPOSE_DEBUG) {
-          console.error(`[debug] execDokku error for: dokku ${args.join(' ')}`)
-          console.error(`[debug]   exit code: ${e.exitCode}, stderr: ${(e.stderr ?? '').slice(0, 200)}`)
-          console.error(`[debug]   stdout length: ${(e.stdout ?? '').length}`)
-        }
         return { stdout: e.stdout ?? '', ok: false }
       }
     }
@@ -71,9 +66,6 @@ export function createRunner(opts: RunnerOptions = {}): Runner {
 
     async query(...args: string[]): Promise<string> {
       const { stdout } = await execDokku(args)
-      if (process.env.DOKKU_COMPOSE_DEBUG && args[0]?.includes('builder-dockerfile')) {
-        console.error(`[debug] query ${args.join(' ')} => ${stdout.length} bytes`)
-      }
       return stdout.trim()
     },
 

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-03-05
+
+### Fixed
+
+- Builder and DockerOptions resources no longer use bulk `readAll` — these Dokku plugins don't support bulk mode (no app arg) from Node subprocesses due to basher environment issues
+- Removed debug logging from `dokku.ts` and `context.ts`
+
 ## [0.6.3] - 2026-03-05
 
 ### Added

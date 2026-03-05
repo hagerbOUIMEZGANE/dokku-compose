@@ -25,12 +25,8 @@ export function createContext(runner: Runner): Context {
 
     query(...args: string[]): Promise<string> {
       const key = args.join('\0')
-      const cached = cache.has(key)
-      if (!cached) {
+      if (!cache.has(key)) {
         cache.set(key, runner.query(...args))
-      }
-      if (process.env.DOKKU_COMPOSE_DEBUG && args[0]?.includes('builder-dockerfile')) {
-        console.error(`[debug] ctx.query(${args.join(' ')}) cached=${cached}`)
       }
       return cache.get(key)!
     },

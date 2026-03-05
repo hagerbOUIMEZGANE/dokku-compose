@@ -1,6 +1,6 @@
 import type { Resource } from '../core/reconcile.js'
 import type { Context } from '../core/context.js'
-import { parseReport, parseBulkReport } from './parsers.js'
+import { parseReport } from './parsers.js'
 
 type BuildConfig = {
   dockerfile?: string
@@ -17,77 +17,37 @@ function parseBuildArgs(dockerOptsBuild: string): Record<string, string> {
   return args
 }
 
-function buildConfigFromReports(
-  builderReport: Record<string, string>,
-  dockerfileReport: Record<string, string>,
-  appJsonReport: Record<string, string>,
-  dockerOptsBuild: string
-): BuildConfig {
-  const config: BuildConfig = {}
-
-  if (dockerfileReport['dockerfile-path'])
-    config.dockerfile = dockerfileReport['dockerfile-path']
-  if (appJsonReport['selected'])
-    config.app_json = appJsonReport['selected']
-  if (builderReport['build-dir'])
-    config.context = builderReport['build-dir']
-
-  const args = parseBuildArgs(dockerOptsBuild)
-  if (Object.keys(args).length > 0) config.args = args
-
-  return config
-}
-
 export const Builder: Resource<BuildConfig> = {
   key: 'build',
 
   async read(ctx: Context, target: string): Promise<BuildConfig> {
-    const builderRaw = await ctx.query('builder:report', target)
-    const dockerfileRaw = await ctx.query('builder-dockerfile:report', target)
-    const appJsonRaw = await ctx.query('app-json:report', target)
-    const dockerOptsRaw = await ctx.query('docker-options:report', target)
+    const [builderRaw, dockerfileRaw, appJsonRaw, dockerOptsRaw] = await Promise.all([
+      ctx.query('builder:report', target),
+      ctx.query('builder-dockerfile:report', target),
+      ctx.query('app-json:report', target),
+      ctx.query('docker-options:report', target),
+    ])
+    const config: BuildConfig = {}
+    const builderReport = parseReport(builderRaw, 'builder')
+    const dockerfileReport = parseReport(dockerfileRaw, 'builder-dockerfile')
+    const appJsonReport = parseReport(appJsonRaw, 'app-json')
     const dockerOptsReport = parseReport(dockerOptsRaw, 'docker-options')
-    return buildConfigFromReports(
-      parseReport(builderRaw, 'builder'),
-      parseReport(dockerfileRaw, 'builder-dockerfile'),
-      parseReport(appJsonRaw, 'app-json'),
-      dockerOptsReport['build'] ?? ''
-    )
+
+    if (dockerfileReport['dockerfile-path'])
+      config.dockerfile = dockerfileReport['dockerfile-path']
+    if (appJsonReport['selected'])
+      config.app_json = appJsonReport['selected']
+    if (builderReport['build-dir'])
+      config.context = builderReport['build-dir']
+
+    const args = parseBuildArgs(dockerOptsReport['build'] ?? '')
+    if (Object.keys(args).length > 0) config.args = args
+
+    return config
   },
 
-  async readAll(ctx: Context): Promise<Map<string, BuildConfig>> {
-    const builderRaw = await ctx.query('builder:report')
-    const dockerfileRaw = await ctx.query('builder-dockerfile:report')
-    const appJsonRaw = await ctx.query('app-json:report')
-    const dockerOptsRaw = await ctx.query('docker-options:report')
-    const builderBulk = parseBulkReport(builderRaw, 'builder')
-    const dockerfileBulk = parseBulkReport(dockerfileRaw, 'builder-dockerfile')
-    const appJsonBulk = parseBulkReport(appJsonRaw, 'app-json')
-    const dockerOptsBulk = parseBulkReport(dockerOptsRaw, 'docker-options')
-
-    if (process.env.DOKKU_COMPOSE_DEBUG) {
-      console.error('[debug] builderRaw length:', builderRaw.length)
-      console.error('[debug] dockerfileRaw length:', dockerfileRaw.length)
-      console.error('[debug] appJsonRaw length:', appJsonRaw.length)
-      console.error('[debug] dockerOptsRaw length:', dockerOptsRaw.length)
-      console.error('[debug] dockerfileRaw first 300:', JSON.stringify(dockerfileRaw.slice(0, 300)))
-      console.error('[debug] dockerOptsRaw first 300:', JSON.stringify(dockerOptsRaw.slice(0, 300)))
-      console.error('[debug] builderBulk keys:', [...builderBulk.keys()])
-      console.error('[debug] dockerfileBulk keys:', [...dockerfileBulk.keys()])
-      console.error('[debug] dockerOptsBulk keys:', [...dockerOptsBulk.keys()])
-    }
-
-    const result = new Map<string, BuildConfig>()
-    for (const app of builderBulk.keys()) {
-      result.set(app, buildConfigFromReports(
-        builderBulk.get(app) ?? {},
-        dockerfileBulk.get(app) ?? {},
-        appJsonBulk.get(app) ?? {},
-        dockerOptsBulk.get(app)?.['build'] ?? ''
-      ))
-    }
-    return result
-  },
+  // No readAll — builder-dockerfile:report and docker-options:report
+  // don't support bulk mode (no app arg) on all Dokku installations
 
   async onChange(ctx: Context, target: string, { after }: { after: BuildConfig }): Promise<void> {
     if (after.dockerfile)
