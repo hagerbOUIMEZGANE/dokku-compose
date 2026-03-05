@@ -1,0 +1,35 @@
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+- Bulk prefetch via `readAll` on resources for ~10x fewer SSH calls in `export` and `diff`
+- `parseBulkReport` for multi-app Dokku report parsing
+- `readAll` support for property, list, toggle, certs, networks, and git resources
+
+## [0.4.0] - 2026-03-04
+
+### Added
+
+- Resource reconciler with generic `Resource` interface and `reconcile` loop
+- `computeChange` with scalar, list, and map diffing
+- `Context` with cached queries and command recording
+- Resource definitions for all modules: property, list, toggle, lifecycle, config, certs, docker-options, builder, git, checks, and network
+- Git module (`git:initialize` + `deploy-branch`)
+- Service backup configuration (`backup-auth` + `backup-schedule`)
+- `${VAR}` environment variable interpolation in config loader
+- `--image` and `--image-version` flags on service create
+
+### Changed
+
+- Rewrote `export` and `diff` commands using resource registry
+- Wired resource registry into `up` command
+- Unified on `Context` everywhere, removed `Runner` passthrough
+- Removed old module files replaced by resource definitions
+
+### Fixed
+
+- Idempotent `nginx:set` with `proxy:build-config` on change
+- Logging consistency in nginx and git modules
+- Pass `--image` and `--image-version` flags on service create
