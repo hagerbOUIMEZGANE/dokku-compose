@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-03-04
+
+### Fixed
+
+- `parseBulkReport` now handles multi-word namespaces (e.g. `docker options`) in report headers
+- Certs bulk report uses correct `ssl` namespace matching real Dokku output
+
 ## [0.6.1] - 2026-03-04
 
 ### Added
