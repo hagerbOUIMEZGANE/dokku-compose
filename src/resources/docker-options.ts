@@ -1,6 +1,6 @@
 import type { Resource } from '../core/reconcile.js'
 import type { Context } from '../core/context.js'
-import { parseReport } from './parsers.js'
+import { parseReport, parseBulkReport } from './parsers.js'
 
 type DockerOpts = { build?: string[]; deploy?: string[]; run?: string[] }
 
@@ -36,8 +36,15 @@ export const DockerOptions: Resource<DockerOpts> = {
     return dockerOptsFromReport(parseReport(raw, 'docker-options'))
   },
 
-  // No readAll — docker-options:report doesn't support bulk mode (no app arg)
-  // on all Dokku installations due to basher environment issues
+  async readAll(ctx: Context): Promise<Map<string, DockerOpts>> {
+    const raw = await ctx.query('docker-options:report')
+    const bulk = parseBulkReport(raw, 'docker-options')
+    const result = new Map<string, DockerOpts>()
+    for (const [app, report] of bulk) {
+      result.set(app, dockerOptsFromReport(report))
+    }
+    return result
+  },
 
   async onChange(ctx: Context, target: string, { before, after }: { before: DockerOpts; after: DockerOpts }): Promise<void> {
     for (const phase of PHASES) {

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.6.9] - 2026-03-05
+
+### Changed
+
+- Restored bulk `readAll` for Builder, DockerOptions, and `plugin:list` — these work correctly via SSH mode (`DOKKU_HOST`), which is the recommended way to run on the server
+
 ## [0.6.8] - 2026-03-05
 
 ### Fixed
