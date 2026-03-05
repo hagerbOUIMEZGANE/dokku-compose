@@ -1,0 +1,66 @@
+import type { Context } from '../core/context.js'
+import type { RedisConfig } from '../core/schema.js'
+import { logAction, logDone, logSkip } from '../core/logger.js'
+
+export async function ensureRedis(
+  ctx: Context,
+  services: Record<string, RedisConfig>
+): Promise<void> {
+  for (const [name, config] of Object.entries(services)) {
+    logAction('services', `Ensuring ${name}`)
+    const exists = await ctx.check('redis:exists', name)
+    if (exists) { logSkip(); continue }
+    const args: string[] = ['redis:create', name]
+    if (config.image) args.push('--image', config.image)
+    if (config.version) args.push('--image-version', config.version)
+    await ctx.run(...args)
+    logDone()
+  }
+}
+
+export async function destroyRedis(
+  ctx: Context,
+  services: Record<string, RedisConfig>
+): Promise<void> {
+  for (const [name] of Object.entries(services)) {
+    logAction('services', `Destroying ${name}`)
+    const exists = await ctx.check('redis:exists', name)
+    if (!exists) { logSkip(); continue }
+    await ctx.run('redis:destroy', name, '--force')
+    logDone()
+  }
+}
+
+export async function exportRedis(
+  ctx: Context
+): Promise<Record<string, RedisConfig>> {
+  const services: Record<string, RedisConfig> = {}
+  const listOutput = await ctx.query('redis:list')
+  const lines = listOutput.split('\n').slice(1)
+
+  for (const line of lines) {
+    const name = line.trim().split(/\s+/)[0]
+    if (!name) continue
+
+    const infoOutput = await ctx.query('redis:info', name)
+    const versionMatch = infoOutput.match(/Version:\s+(\S+)/)
+    if (!versionMatch) continue
+
+    const versionField = versionMatch[1]
+    const colonIdx = versionField.lastIndexOf(':')
+
+    const config: RedisConfig = {}
+    if (colonIdx > 0) {
+      const image = versionField.slice(0, colonIdx)
+      const version = versionField.slice(colonIdx + 1)
+      if (image !== 'redis') config.image = image
+      if (version) config.version = version
+    } else {
+      config.version = versionField
+    }
+
+    services[name] = config
+  }
+
+  return services
+}

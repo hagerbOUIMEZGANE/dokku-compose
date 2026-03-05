@@ -1,0 +1,66 @@
+import { describe, it, expect, vi } from 'vitest'
+import { createRunner } from '../core/dokku.js'
+import { createContext } from '../core/context.js'
+import { ensureRedis, destroyRedis, exportRedis } from './redis.js'
+
+describe('ensureRedis', () => {
+  it('creates service that does not exist', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.check = vi.fn().mockResolvedValue(false)
+    runner.run = vi.fn()
+    const ctx = createContext(runner)
+    await ensureRedis(ctx, { 'api-cache': {} })
+    expect(runner.run).toHaveBeenCalledWith('redis:create', 'api-cache')
+  })
+
+  it('skips service that exists', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.check = vi.fn().mockResolvedValue(true)
+    runner.run = vi.fn()
+    const ctx = createContext(runner)
+    await ensureRedis(ctx, { 'api-cache': {} })
+    expect(runner.run).not.toHaveBeenCalled()
+  })
+
+  it('passes --image-version flag', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.check = vi.fn().mockResolvedValue(false)
+    runner.run = vi.fn()
+    const ctx = createContext(runner)
+    await ensureRedis(ctx, { 'api-cache': { version: '7.2-alpine' } })
+    expect(runner.run).toHaveBeenCalledWith('redis:create', 'api-cache', '--image-version', '7.2-alpine')
+  })
+})
+
+describe('destroyRedis', () => {
+  it('destroys existing service', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.check = vi.fn().mockResolvedValue(true)
+    runner.run = vi.fn()
+    const ctx = createContext(runner)
+    await destroyRedis(ctx, { 'api-cache': {} })
+    expect(runner.run).toHaveBeenCalledWith('redis:destroy', 'api-cache', '--force')
+  })
+})
+
+describe('exportRedis', () => {
+  it('exports redis services with version', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.query = vi.fn().mockImplementation(async (...args: string[]) => {
+      if (args[0] === 'redis:list') return 'NAME   VERSION   STATUS\napi-cache redis:7.2-alpine running'
+      if (args[0] === 'redis:info') return '=====> api-cache\n       Version:             redis:7.2-alpine'
+      return ''
+    })
+    const ctx = createContext(runner)
+    const result = await exportRedis(ctx)
+    expect(result).toEqual({ 'api-cache': { version: '7.2-alpine' } })
+  })
+
+  it('returns empty when no services', async () => {
+    const runner = createRunner({ dryRun: false })
+    runner.query = vi.fn().mockResolvedValue('NAME   VERSION   STATUS')
+    const ctx = createContext(runner)
+    const result = await exportRedis(ctx)
+    expect(result).toEqual({})
+  })
+})
