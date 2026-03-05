@@ -1,4 +1,2 @@
-#!/usr/bin/env bash
-# Delegate to TypeScript implementation
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bun "${SCRIPT_DIR}/../src/index.ts" "$@"
+#!/usr/bin/env node
+import('../dist/index.js');

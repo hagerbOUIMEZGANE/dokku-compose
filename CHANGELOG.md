@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-03-05
+
+### Fixed
+
+- CLI bin script now runs the compiled `dist/index.js` via Node instead of `src/index.ts` via Bun, which wasn't shipped in the npm package
+
 ## [0.9.0] - 2026-03-05
 
 ### Fixed
