@@ -71,6 +71,9 @@ export function createRunner(opts: RunnerOptions = {}): Runner {
 
     async query(...args: string[]): Promise<string> {
       const { stdout } = await execDokku(args)
+      if (process.env.DOKKU_COMPOSE_DEBUG && args[0]?.includes('builder-dockerfile')) {
+        console.error(`[debug] query ${args.join(' ')} => ${stdout.length} bytes`)
+      }
       return stdout.trim()
     },
 
