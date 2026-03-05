@@ -7,7 +7,8 @@
  */
 export function parseReport(raw: string, namespace: string): Record<string, string> {
   const result: Record<string, string> = {}
-  const prefix = new RegExp(`^${namespace}\\s+`, 'i')
+  const prefixPattern = namespace.replace(/-/g, '[\\s-]')
+  const prefix = new RegExp(`^${prefixPattern}\\s+`, 'i')
 
   for (const line of raw.split('\n')) {
     // Skip header lines (=====> ...)
