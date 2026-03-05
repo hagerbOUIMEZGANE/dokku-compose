@@ -31,3 +31,24 @@ describe('Proxy resource', () => {
     expect(ctx.commands).toEqual([])
   })
 })
+
+describe('Proxy.readAll (bulk)', () => {
+  function makeCtx(queryResult: string) {
+    const runner = createRunner({ dryRun: false })
+    runner.query = vi.fn().mockResolvedValue(queryResult)
+    runner.run = vi.fn()
+    return createContext(runner)
+  }
+
+  it('returns per-app booleans from bulk report', async () => {
+    const ctx = makeCtx(
+      '=====> app1 proxy information\n' +
+      '       Proxy enabled:                true\n' +
+      '=====> app2 proxy information\n' +
+      '       Proxy enabled:                false\n'
+    )
+    const result = await Proxy.readAll!(ctx)
+    expect(result.get('app1')).toBe(true)
+    expect(result.get('app2')).toBe(false)
+  })
+})
