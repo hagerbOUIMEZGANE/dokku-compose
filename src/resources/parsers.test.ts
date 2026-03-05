@@ -1,6 +1,6 @@
 // src/resources/parsers.test.ts
 import { describe, it, expect } from 'vitest'
-import { parseReport } from './parsers.js'
+import { parseReport, parseBulkReport } from './parsers.js'
 
 describe('parseReport', () => {
   it('parses nginx report format', () => {
@@ -68,5 +68,44 @@ describe('parseReport', () => {
 
   it('returns empty object for empty input', () => {
     expect(parseReport('', 'nginx')).toEqual({})
+  })
+})
+
+describe('parseBulkReport', () => {
+  it('splits multi-app output into per-app maps', () => {
+    const raw = `=====> app1 nginx information
+       Nginx client max body size:      1m
+       Nginx proxy read timeout:        60s
+=====> app2 nginx information
+       Nginx client max body size:      50m`
+    const result = parseBulkReport(raw, 'nginx')
+    expect(result.size).toBe(2)
+    expect(result.get('app1')).toEqual({
+      'client-max-body-size': '1m',
+      'proxy-read-timeout': '60s',
+    })
+    expect(result.get('app2')).toEqual({
+      'client-max-body-size': '50m',
+    })
+  })
+
+  it('handles hyphenated app names', () => {
+    const raw = `=====> my-cool-app logs information
+       Logs max size:                   10m`
+    const result = parseBulkReport(raw, 'logs')
+    expect(result.get('my-cool-app')).toEqual({ 'max-size': '10m' })
+  })
+
+  it('returns empty map for empty input', () => {
+    expect(parseBulkReport('', 'nginx').size).toBe(0)
+  })
+
+  it('skips computed and global keys same as parseReport', () => {
+    const raw = `=====> app1 nginx information
+       Nginx computed hsts:             true
+       Nginx global hsts:              true
+       Nginx hsts:                      true`
+    const result = parseBulkReport(raw, 'nginx')
+    expect(result.get('app1')).toEqual({ 'hsts': 'true' })
   })
 })
