@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-03-04
+
+### Added
+
+- DockerOptions resource now reads from `docker-options:report`, removing `forceApply`
+- `docker_options` now appear in `export` and `diff` output
+
+### Fixed
+
+- DockerOptions `onChange` uses targeted add/remove instead of clearing all options, preventing loss of `--link` and `--build-arg` entries managed by other resources
+
 ## [0.6.0] - 2026-03-04
 
 ### Added
