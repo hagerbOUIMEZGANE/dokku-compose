@@ -42,12 +42,10 @@ export const Builder: Resource<BuildConfig> = {
   key: 'build',
 
   async read(ctx: Context, target: string): Promise<BuildConfig> {
-    const [builderRaw, dockerfileRaw, appJsonRaw, dockerOptsRaw] = await Promise.all([
-      ctx.query('builder:report', target),
-      ctx.query('builder-dockerfile:report', target),
-      ctx.query('app-json:report', target),
-      ctx.query('docker-options:report', target),
-    ])
+    const builderRaw = await ctx.query('builder:report', target)
+    const dockerfileRaw = await ctx.query('builder-dockerfile:report', target)
+    const appJsonRaw = await ctx.query('app-json:report', target)
+    const dockerOptsRaw = await ctx.query('docker-options:report', target)
     const dockerOptsReport = parseReport(dockerOptsRaw, 'docker-options')
     return buildConfigFromReports(
       parseReport(builderRaw, 'builder'),
@@ -58,12 +56,10 @@ export const Builder: Resource<BuildConfig> = {
   },
 
   async readAll(ctx: Context): Promise<Map<string, BuildConfig>> {
-    const [builderRaw, dockerfileRaw, appJsonRaw, dockerOptsRaw] = await Promise.all([
-      ctx.query('builder:report'),
-      ctx.query('builder-dockerfile:report'),
-      ctx.query('app-json:report'),
-      ctx.query('docker-options:report'),
-    ])
+    const builderRaw = await ctx.query('builder:report')
+    const dockerfileRaw = await ctx.query('builder-dockerfile:report')
+    const appJsonRaw = await ctx.query('app-json:report')
+    const dockerOptsRaw = await ctx.query('docker-options:report')
     const builderBulk = parseBulkReport(builderRaw, 'builder')
     const dockerfileBulk = parseBulkReport(dockerfileRaw, 'builder-dockerfile')
     const appJsonBulk = parseBulkReport(appJsonRaw, 'app-json')
