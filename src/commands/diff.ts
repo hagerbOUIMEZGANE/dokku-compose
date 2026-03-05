@@ -25,6 +25,16 @@ interface DiffResult {
 export async function computeDiff(ctx: Context, config: Config): Promise<DiffResult> {
   const result: DiffResult = { apps: {}, services: {}, inSync: true }
 
+  // Bulk prefetch: run all readAll queries in parallel
+  const prefetched = new Map<string, Map<string, unknown>>()
+  await Promise.all(
+    ALL_APP_RESOURCES
+      .filter(r => !r.forceApply && !r.key.startsWith('_') && r.readAll)
+      .map(async r => {
+        prefetched.set(r.key, await r.readAll!(ctx))
+      })
+  )
+
   for (const [app, appConfig] of Object.entries(config.apps)) {
     const appDiff: AppDiff = {}
 
@@ -41,7 +51,8 @@ export async function computeDiff(ctx: Context, config: Config): Promise<DiffRes
       }
       if (desired === undefined) continue
 
-      const current = await resource.read(ctx, app)
+      const bulk = prefetched.get(resource.key)
+      const current = bulk ? bulk.get(app) : await resource.read(ctx, app)
       const change = computeChange(current as any, desired as any)
 
       if (!change.changed) {

@@ -29,11 +29,19 @@ const desired: Config = {
   }
 }
 
+// Bulk report format helpers
+function portsReport(app: string, value: string) {
+  return `=====> ${app} ports information\n       Ports map:                    ${value}\n`
+}
+function domainsReport(app: string, value: string) {
+  return `=====> ${app} domains information\n       Domains app vhosts:           ${value}\n`
+}
+
 describe('computeDiff', () => {
   it('detects port change', async () => {
     const ctx = makeCtx({
-      'ports:report api --ports-map': 'http:80:4000',
-      'domains:report api --domains-app-vhosts': 'api.example.com',
+      'ports:report': portsReport('api', 'http:80:4000'),
+      'domains:report': domainsReport('api', 'api.example.com'),
     })
     const diff = await computeDiff(ctx, desired)
     expect(diff.apps['api'].ports?.status).toBe('changed')
@@ -41,8 +49,8 @@ describe('computeDiff', () => {
 
   it('detects missing domain', async () => {
     const ctx = makeCtx({
-      'ports:report api --ports-map': 'http:80:3000',
-      'domains:report api --domains-app-vhosts': '',
+      'ports:report': portsReport('api', 'http:80:3000'),
+      'domains:report': domainsReport('api', ''),
     })
     const diff = await computeDiff(ctx, desired)
     expect(diff.apps['api'].domains?.status).toBe('missing')
@@ -50,8 +58,8 @@ describe('computeDiff', () => {
 
   it('reports in-sync when identical', async () => {
     const ctx = makeCtx({
-      'ports:report api --ports-map': 'http:80:3000',
-      'domains:report api --domains-app-vhosts': 'api.example.com',
+      'ports:report': portsReport('api', 'http:80:3000'),
+      'domains:report': domainsReport('api', 'api.example.com'),
     })
     const diff = await computeDiff(ctx, desired)
     expect(diff.inSync).toBe(true)
@@ -61,8 +69,8 @@ describe('computeDiff', () => {
 describe('formatSummary', () => {
   it('shows changed and missing items', async () => {
     const ctx = makeCtx({
-      'ports:report api --ports-map': 'http:80:4000',
-      'domains:report api --domains-app-vhosts': '',
+      'ports:report': portsReport('api', 'http:80:4000'),
+      'domains:report': domainsReport('api', ''),
     })
     const diff = await computeDiff(ctx, desired)
     const output = formatSummary(diff)
@@ -75,8 +83,8 @@ describe('formatSummary', () => {
 describe('formatVerbose', () => {
   it('shows +/- lines', async () => {
     const ctx = makeCtx({
-      'ports:report api --ports-map': 'http:80:4000',
-      'domains:report api --domains-app-vhosts': '',
+      'ports:report': portsReport('api', 'http:80:4000'),
+      'domains:report': domainsReport('api', ''),
     })
     const diff = await computeDiff(ctx, desired)
     const output = formatVerbose(diff)
