@@ -18,7 +18,7 @@
 
 Dokku is a battle-tested, single-server PaaS — and one of the best platforms for self-hosting. But configuring it means running dozens of imperative commands in the right order. Miss one and your deploy breaks. Change servers and you're starting over.
 
-AI agents can generate and deploy code better than ever, but they can't reason about infrastructure that lives as a sequence of shell commands. There's no file to diff, no history to track, no way to review changes in a PR.
+AI agents can generate and deploy code better than ever, but infrastructure as shell history can't be diffed, reviewed, or reproduced.
 
 `dokku-compose` makes Dokku declarative. One YAML file. Git-trackable. AI-friendly. Like Docker Compose, but for Dokku.
 
