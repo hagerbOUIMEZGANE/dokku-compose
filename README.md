@@ -16,7 +16,7 @@
 
 ## Why
 
-Dokku is a battle-tested, single-server PaaS — and one of the best platforms for self-hosting. But configuring it means running dozens of imperative commands in the right order. Miss one and your deploy breaks. Change servers and you're starting over.
+[Dokku](https://dokku.com) is a battle-tested, single-server PaaS — and one of the best platforms for self-hosting. But configuring it means running dozens of imperative commands in the right order. Miss one and your deploy breaks. Change servers and you're starting over.
 
 AI agents can generate and deploy code better than ever, but infrastructure as shell history can't be diffed, reviewed, or reproduced.
 
