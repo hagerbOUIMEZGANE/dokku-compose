@@ -28,6 +28,16 @@ export async function runExport(ctx: Context, opts: ExportOptions): Promise<Conf
   const services = await exportServices(ctx)
   if (Object.keys(services).length > 0) config.services = services
 
+  // Bulk prefetch: run all readAll queries in parallel
+  const prefetched = new Map<string, Map<string, unknown>>()
+  await Promise.all(
+    ALL_APP_RESOURCES
+      .filter(r => !r.forceApply && !r.key.startsWith('_') && r.readAll)
+      .map(async r => {
+        prefetched.set(r.key, await r.readAll!(ctx))
+      })
+  )
+
   // Per-app
   for (const app of apps) {
     const appConfig: Config['apps'][string] = {}
@@ -37,7 +47,8 @@ export async function runExport(ctx: Context, opts: ExportOptions): Promise<Conf
       if (resource.key.startsWith('_')) continue  // skip internal keys like _app
       if (resource.forceApply) continue  // skip forceApply resources — they can't be read
 
-      const value = await resource.read(ctx, app)
+      const bulk = prefetched.get(resource.key)
+      const value = bulk ? bulk.get(app) : await resource.read(ctx, app)
 
       // Skip empty values
       if (value === undefined || value === null || value === '') continue
