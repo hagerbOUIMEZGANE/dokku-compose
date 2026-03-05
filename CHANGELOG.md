@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-05
+
+### Fixed
+
+- `export` now includes backup schedule and bucket for postgres services (auth credentials use `REPLACE_ME` placeholders since Dokku doesn't expose stored secrets)
+
 ## [0.8.0] - 2026-03-05
 
 ### Breaking
