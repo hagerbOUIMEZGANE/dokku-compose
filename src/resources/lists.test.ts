@@ -69,3 +69,54 @@ describe('Storage resource', () => {
     expect(ctx.commands).toEqual([])
   })
 })
+
+describe('readAll (bulk)', () => {
+  function makeCtx(queryResult: string) {
+    const runner = createRunner({ dryRun: false })
+    runner.query = vi.fn().mockResolvedValue(queryResult)
+    runner.run = vi.fn()
+    return createContext(runner)
+  }
+
+  it('Ports.readAll returns per-app port arrays', async () => {
+    const ctx = makeCtx(
+      '=====> app1 ports information\n' +
+      '       Ports map:                    http:80:3000 https:443:3000\n' +
+      '=====> app2 ports information\n' +
+      '       Ports map:                    http:80:4000\n'
+    )
+    const result = await Ports.readAll!(ctx)
+    expect(result.get('app1')).toEqual(['http:80:3000', 'https:443:3000'])
+    expect(result.get('app2')).toEqual(['http:80:4000'])
+  })
+
+  it('Domains.readAll returns per-app domain arrays', async () => {
+    const ctx = makeCtx(
+      '=====> app1 domains information\n' +
+      '       Domains app vhosts:           example.com\n' +
+      '=====> app2 domains information\n' +
+      '       Domains app vhosts:           foo.com bar.com\n'
+    )
+    const result = await Domains.readAll!(ctx)
+    expect(result.get('app1')).toEqual(['example.com'])
+    expect(result.get('app2')).toEqual(['foo.com', 'bar.com'])
+  })
+
+  it('Storage.readAll returns per-app mount arrays', async () => {
+    const ctx = makeCtx(
+      '=====> app1 storage information\n' +
+      '       Storage mounts:               /data:/app/data\n'
+    )
+    const result = await Storage.readAll!(ctx)
+    expect(result.get('app1')).toEqual(['/data:/app/data'])
+  })
+
+  it('handles empty field values as empty arrays', async () => {
+    const ctx = makeCtx(
+      '=====> app1 ports information\n' +
+      '       Ports map:                    \n'
+    )
+    const result = await Ports.readAll!(ctx)
+    expect(result.get('app1')).toEqual([])
+  })
+})
