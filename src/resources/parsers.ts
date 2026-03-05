@@ -36,3 +36,25 @@ export function parseReport(raw: string, namespace: string): Record<string, stri
 
   return result
 }
+
+/**
+ * Parse bulk Dokku report output (all apps) into a Map of app -> key-value maps.
+ * Splits on "=====> <app> <namespace> information" headers, then delegates
+ * each section to parseReport.
+ */
+export function parseBulkReport(raw: string, namespace: string): Map<string, Record<string, string>> {
+  const result = new Map<string, Record<string, string>>()
+  const sections = raw.split(/(?=^=====> )/m).filter(s => s.trim())
+
+  for (const section of sections) {
+    const headerEnd = section.indexOf('\n')
+    if (headerEnd === -1) continue
+    const header = section.slice(0, headerEnd)
+    const match = header.match(/^=====> (.+?)\s+\S+\s+information/)
+    if (!match) continue
+    const app = match[1]
+    result.set(app, parseReport(section, namespace))
+  }
+
+  return result
+}
