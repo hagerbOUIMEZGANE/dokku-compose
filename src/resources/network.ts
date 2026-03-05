@@ -1,7 +1,7 @@
 import type { Resource } from '../core/reconcile.js'
 import type { ListChange, Change } from '../core/change.js'
 import type { Context } from '../core/context.js'
-import { parseBulkReport } from './parsers.js'
+import { parseReport, parseBulkReport } from './parsers.js'
 
 export const Networks: Resource<string[]> = {
   key: 'networks',
@@ -32,8 +32,34 @@ type NetworkPropsConfig = {
 
 export const NetworkProps: Resource<NetworkPropsConfig> = {
   key: 'network',
-  forceApply: true,
-  read: async () => ({} as NetworkPropsConfig),
+  read: async (ctx, target) => {
+    const raw = await ctx.query('network:report', target)
+    const report = parseReport(raw, 'network')
+    const config: NetworkPropsConfig = {}
+    if (report['attach-post-create']) {
+      config.attach_post_create = report['attach-post-create'].split(/\s+/)
+    }
+    if (report['initial-network']) config.initial_network = report['initial-network']
+    if (report['bind-all-interfaces'] === 'true') config.bind_all_interfaces = true
+    if (report['tld']) config.tld = report['tld']
+    return config
+  },
+  readAll: async (ctx: Context) => {
+    const raw = await ctx.query('network:report')
+    const bulk = parseBulkReport(raw, 'network')
+    const result = new Map<string, NetworkPropsConfig>()
+    for (const [app, report] of bulk) {
+      const config: NetworkPropsConfig = {}
+      if (report['attach-post-create']) {
+        config.attach_post_create = report['attach-post-create'].split(/\s+/)
+      }
+      if (report['initial-network']) config.initial_network = report['initial-network']
+      if (report['bind-all-interfaces'] === 'true') config.bind_all_interfaces = true
+      if (report['tld']) config.tld = report['tld']
+      result.set(app, config)
+    }
+    return result
+  },
   onChange: async (ctx, target, { after }: Change<NetworkPropsConfig>) => {
     if (after.attach_post_create !== undefined && after.attach_post_create !== false) {
       const nets = Array.isArray(after.attach_post_create)

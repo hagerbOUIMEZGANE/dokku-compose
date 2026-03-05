@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.6.12] - 2026-03-05
+
+### Fixed
+
+- NetworkProps resource now reads `attach-post-create`, `initial-network`, `bind-all-interfaces`, and `tld` from server state, removing `forceApply`
+- `export` and `diff` now show `network` properties (e.g. `attach_post_create`) for apps that use them
+
 ## [0.6.11] - 2026-03-05
 
 ### Added
