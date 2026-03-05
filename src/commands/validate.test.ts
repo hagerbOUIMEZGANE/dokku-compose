@@ -17,7 +17,7 @@ describe('validate', () => {
 
   it('errors when app links to undefined service', () => {
     const result = validate(path.join(FIXTURES, 'invalid_links.yml'))
-    expect(result.errors.some(e => e.includes('not defined in services'))).toBe(true)
+    expect(result.errors.some(e => e.includes('not defined in postgres or redis'))).toBe(true)
   })
 
   it('errors on invalid port format', () => {

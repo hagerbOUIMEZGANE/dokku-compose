@@ -18,13 +18,12 @@ describe('git config in schema', () => {
   })
 })
 
-describe('ServiceSchema backup', () => {
-  it('accepts a service with backup config', () => {
+describe('PostgresSchema backup', () => {
+  it('accepts a postgres service with backup config', () => {
     const result = parseConfig({
       apps: {},
-      services: {
+      postgres: {
         'funqtion-db': {
-          plugin: 'postgres',
           backup: {
             schedule: '0 * * * *',
             bucket: 'db-backups/funqtion-db',
@@ -39,15 +38,15 @@ describe('ServiceSchema backup', () => {
         },
       },
     })
-    expect(result.services?.['funqtion-db']?.backup?.schedule).toBe('0 * * * *')
+    expect(result.postgres?.['funqtion-db']?.backup?.schedule).toBe('0 * * * *')
   })
 
-  it('accepts a service without backup config', () => {
+  it('accepts a postgres service without backup config', () => {
     const result = parseConfig({
       apps: {},
-      services: { 'funqtion-redis': { plugin: 'redis' } },
+      postgres: { 'funqtion-db': {} },
     })
-    expect(result.services?.['funqtion-redis']?.backup).toBeUndefined()
+    expect(result.postgres?.['funqtion-db']?.backup).toBeUndefined()
   })
 })
 

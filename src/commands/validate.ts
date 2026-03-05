@@ -37,29 +37,30 @@ export function validate(filePath: string): ValidationResult {
   // 4. Cross-field: service references
   const data = raw as any
   if (data?.apps && typeof data.apps === 'object') {
-    const serviceNames = new Set(
-      data?.services && typeof data.services === 'object'
-        ? Object.keys(data.services)
-        : []
-    )
+    const serviceNames = new Set<string>()
+    if (data?.postgres && typeof data.postgres === 'object') {
+      for (const name of Object.keys(data.postgres)) serviceNames.add(name)
+    }
+    if (data?.redis && typeof data.redis === 'object') {
+      for (const name of Object.keys(data.redis)) serviceNames.add(name)
+    }
     for (const [appName, appCfg] of Object.entries<any>(data.apps)) {
       if (!appCfg?.links) continue
       for (const link of appCfg.links) {
         if (!serviceNames.has(link)) {
-          errors.push(`apps.${appName}.links: service "${link}" not defined in services`)
+          errors.push(`apps.${appName}.links: service "${link}" not defined in postgres or redis`)
         }
       }
     }
   }
 
   // 5. Cross-field: plugin references (warnings only)
-  if (data?.services && data?.plugins) {
-    const pluginNames = new Set(Object.keys(data.plugins))
-    for (const [svcName, svcCfg] of Object.entries<any>(data.services)) {
-      if (svcCfg?.plugin && !pluginNames.has(svcCfg.plugin)) {
-        warnings.push(`services.${svcName}.plugin: "${svcCfg.plugin}" not declared in plugins (may be pre-installed)`)
-      }
-    }
+  const pluginNames = data?.plugins ? new Set(Object.keys(data.plugins)) : new Set<string>()
+  if (data?.postgres && pluginNames.size > 0 && !pluginNames.has('postgres')) {
+    warnings.push(`postgres: "postgres" plugin not declared in plugins (may be pre-installed)`)
+  }
+  if (data?.redis && pluginNames.size > 0 && !pluginNames.has('redis')) {
+    warnings.push(`redis: "redis" plugin not declared in plugins (may be pre-installed)`)
   }
 
   return { errors, warnings }
