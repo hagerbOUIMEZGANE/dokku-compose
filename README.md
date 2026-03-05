@@ -176,7 +176,7 @@ apps:
 
 ### Docker Options
 
-Add custom Docker options per build phase (`build`, `deploy`, `run`). Each phase is cleared and re-populated on every `up` for idempotent convergence.
+Add custom Docker options per build phase (`build`, `deploy`, `run`). Options are converged with targeted add/remove — only changed options are modified, preserving entries managed by other resources (e.g. `--link`, `--build-arg`).
 
 ```yaml
 apps:
@@ -411,8 +411,10 @@ dokku-compose down --force           # Destroy all configured apps
 |--------|-------------|
 | `--file <path>` | Config file (default: `dokku-compose.yml`) |
 | `--dry-run` | Print commands without executing |
+| `--sensitive` | Show sensitive values in output (masked by default) |
 | `--fail-fast` | Stop on first error (default: continue to next app) |
 | `--remove-orphans` | Destroy services and networks not in config |
+| `--verbose` | Show git-style +/- diff (diff command only) |
 | `--help` | Show usage |
 | `--version` | Show version |
 
@@ -429,14 +431,14 @@ dokku-compose ps                      # Show status
 ## Execution Modes
 
 ```bash
-# Run locally on the Dokku server
-dokku-compose up
-
-# Run remotely over SSH
+# Run remotely over SSH (recommended)
 DOKKU_HOST=my-server.example.com dokku-compose up
+
+# Run on the Dokku server itself (use DOKKU_HOST=localhost for best compatibility)
+DOKKU_HOST=localhost dokku-compose up
 ```
 
-When `DOKKU_HOST` is set, all Dokku commands are sent over SSH. This is the typical workflow — keep `dokku-compose.yml` in your project repo and apply it from your local machine. SSH key access to the Dokku server is required.
+When `DOKKU_HOST` is set, all Dokku commands are sent over SSH. This is the recommended mode — it works both remotely from your local machine and directly on the server. SSH mode avoids compatibility issues with Dokku's basher environment that can affect some commands when called directly from Node.js. SSH key access to the Dokku server is required.
 
 ## What `up` Does
 
