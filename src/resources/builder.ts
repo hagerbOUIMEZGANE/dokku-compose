@@ -69,6 +69,15 @@ export const Builder: Resource<BuildConfig> = {
     const appJsonBulk = parseBulkReport(appJsonRaw, 'app-json')
     const dockerOptsBulk = parseBulkReport(dockerOptsRaw, 'docker-options')
 
+    if (process.env.DOKKU_COMPOSE_DEBUG) {
+      const app0 = [...builderBulk.keys()][0]
+      console.error('[debug] builderBulk keys:', [...builderBulk.keys()])
+      console.error('[debug] dockerfileBulk keys:', [...dockerfileBulk.keys()])
+      console.error('[debug] dockerfileBulk[' + app0 + ']:', JSON.stringify(dockerfileBulk.get(app0!)))
+      console.error('[debug] dockerOptsRaw first 200:', dockerOptsRaw.slice(0, 200))
+      console.error('[debug] dockerOptsBulk keys:', [...dockerOptsBulk.keys()])
+    }
+
     const result = new Map<string, BuildConfig>()
     for (const app of builderBulk.keys()) {
       result.set(app, buildConfigFromReports(
