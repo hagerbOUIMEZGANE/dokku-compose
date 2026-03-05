@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-04
+
 ### Added
 
 - Bulk prefetch via `readAll` on resources for ~10x fewer SSH calls in `export` and `diff`
