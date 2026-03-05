@@ -46,13 +46,15 @@ export const DockerOptions: Resource<DockerOpts> = {
     return result
   },
 
-  async onChange(ctx: Context, target: string, { after }: { after: DockerOpts }): Promise<void> {
+  async onChange(ctx: Context, target: string, { before, after }: { before: DockerOpts; after: DockerOpts }): Promise<void> {
     for (const phase of PHASES) {
-      const opts = after[phase]
-      if (!opts || opts.length === 0) continue
-      await ctx.run('docker-options:clear', target, phase)
-      for (const opt of opts) {
-        await ctx.run('docker-options:add', target, phase, opt)
+      const prev = new Set(before[phase] ?? [])
+      const desired = new Set(after[phase] ?? [])
+      for (const opt of desired) {
+        if (!prev.has(opt)) await ctx.run('docker-options:add', target, phase, opt)
+      }
+      for (const opt of prev) {
+        if (!desired.has(opt)) await ctx.run('docker-options:remove', target, phase, opt)
       }
     }
   },

@@ -55,4 +55,17 @@ describe('DockerOptions resource', () => {
 
     expect(config).toEqual({})
   })
+
+  it('onChange adds new and removes old options without clearing', async () => {
+    const ctx = makeCtx({})
+    const before = { deploy: ['--restart=on-failure:10', '--shm-size 256m'] }
+    const after = { deploy: ['--restart=on-failure:10', '--memory 512m'] }
+
+    await DockerOptions.onChange!(ctx, 'myapp', { before, after, changed: true })
+
+    const calls = (ctx.runner.run as any).mock.calls.map((c: string[]) => c.join(' '))
+    expect(calls).toContain('docker-options:add myapp deploy --memory 512m')
+    expect(calls).toContain('docker-options:remove myapp deploy --shm-size 256m')
+    expect(calls).not.toContainEqual(expect.stringContaining('docker-options:clear'))
+  })
 })
