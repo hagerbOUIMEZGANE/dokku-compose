@@ -20,7 +20,9 @@
 
 AI agents can generate and deploy code better than ever, but infrastructure as shell history can't be diffed, reviewed, or reproduced.
 
-`dokku-compose` makes Dokku declarative. One YAML file. Git-trackable. AI-friendly. Like Docker Compose, but for Dokku.
+`dokku-compose` makes Dokku declarative. One YAML file. Git-trackable. Agent-friendly. 
+
+Like Docker Compose, but for Dokku.
 
 ## Quick Start
 
