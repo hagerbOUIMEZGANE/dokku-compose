@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-03-05
+
+### Breaking
+
+- **`services:` key removed** — replaced with dedicated `postgres:` and `redis:` top-level keys. The `plugin` field is no longer needed (implicit from the key). See the updated README for the new format.
+
+### Added
+
+- Dedicated `postgres:` top-level key with support for `version`, `image`, and `backup` (S3-compatible automated backups)
+- Dedicated `redis:` top-level key with support for `version` and `image`
+- Cross-plugin link resolution — `links:` references are resolved across both `postgres:` and `redis:` sections
+- Export discovers postgres and redis services from server state via `postgres:list`/`redis:list`
+
+### Changed
+
+- Validator cross-field checks now scan `postgres:`/`redis:` instead of `services:`
+
 ## [0.7.0] - 2026-03-05
 
 ### Added
