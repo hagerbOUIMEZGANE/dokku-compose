@@ -33,12 +33,12 @@ plugins:
   redis:
     url: https://github.com/dokku/dokku-redis.git
 
-services:
+postgres:
   api-postgres:
-    plugin: postgres
     version: "17-3.5"
-  shared-cache:
-    plugin: redis
+
+redis:
+  shared-cache: {}
 
 networks:
   - backend-net
@@ -351,31 +351,69 @@ apps:
 
 [Log Management Reference →](docs/reference/logs.md)
 
-### Plugins and Services
+### Plugins
 
-Install plugins and declare service instances. Services are created before apps during `up` and linked on demand.
+Install Dokku plugins declaratively. Plugins are checked and installed/updated on each `up` run.
 
 ```yaml
 plugins:
   postgres:
     url: https://github.com/dokku/dokku-postgres.git
     version: "1.41.0"
+  redis:
+    url: https://github.com/dokku/dokku-redis.git
+```
 
+[Plugins Reference →](docs/reference/plugins.md)
+
+### Postgres
+
+Declare Postgres service instances with optional custom images and automated S3-compatible backups.
+
+```yaml
 postgres:
-  api-postgres: {}
+  api-db:
+    version: "17-3.5"
+    image: postgis/postgis
+    backup:
+      schedule: "0 * * * *"
+      bucket: "db-backups/api-db"
+      auth:
+        access_key_id: "${R2_ACCESS_KEY_ID}"
+        secret_access_key: "${R2_SECRET_ACCESS_KEY}"
+        region: "auto"
+        signature_version: "s3v4"
+        endpoint: "${R2_SCHEME}://${R2_HOST}"
+```
 
+[Postgres Reference →](docs/reference/postgres.md)
+
+### Redis
+
+Declare Redis service instances.
+
+```yaml
 redis:
-  api-redis:
+  api-cache:
     version: "7.2-alpine"
+  shared-cache: {}
+```
 
+[Redis Reference →](docs/reference/redis.md)
+
+### Service Links
+
+Link postgres and redis services to apps. Dokku injects connection URLs as environment variables.
+
+```yaml
 apps:
   api:
     links:
-      - api-postgres
-      - api-redis
+      - api-db
+      - api-cache
 ```
 
-[Plugins and Services Reference →](docs/reference/plugins.md)
+[Service Links Reference →](docs/reference/plugins.md#linking-services-to-apps-appsapplinks)
 
 ## Commands
 
@@ -402,7 +440,7 @@ web                  not created
 
 ### `down` — Tear Down
 
-Destroys apps and their linked services. Requires `--force` as a safety measure. For each app, services are unlinked first, then the app is destroyed. Service instances from the top-level `services:` section are destroyed after all apps.
+Destroys apps and their linked services. Requires `--force` as a safety measure. For each app, services are unlinked first, then the app is destroyed. Service instances from the top-level `postgres:` and `redis:` sections are destroyed after all apps.
 
 ```bash
 dokku-compose down --force myapp     # Destroy one app and its services
@@ -452,7 +490,7 @@ Idempotently ensures desired state, in order:
 2. Install missing plugins
 3. Set global config (domains, env vars, nginx defaults)
 4. Create shared networks
-5. Create service instances (from top-level `services:`)
+5. Create postgres and redis service instances, configure backups
 6. For each app:
    - Create app (if not exists)
    - Set domains, link/unlink services, attach networks
@@ -467,13 +505,11 @@ Running `up` twice produces no changes — every step checks current state befor
 
 ```
 [networks  ] Creating backend-net... done
-[services  ] Creating api-postgres (postgres 17-3.5)... done
-[services  ] Creating api-redis (redis)... done
-[services  ] Creating shared-cache (redis)... done
+[services  ] Ensuring api-postgres... done
+[services  ] Ensuring shared-cache... done
 [api       ] Creating app... done
 [api       ] Setting domains: api.example.com... done
 [api       ] Linking api-postgres... done
-[api       ] Linking api-redis... done
 [api       ] Linking shared-cache... done
 [api       ] Setting ports https:4001:4000... done
 [api       ] Adding SSL certificate... done
@@ -517,7 +553,9 @@ dokku-compose/
 │   │   ├── proxy.ts          # dokku proxy:*
 │   │   ├── registry.ts       # dokku registry:*
 │   │   ├── scheduler.ts      # dokku scheduler:*
-│   │   ├── services.ts       # Service instances, links, plugin scripts
+│   │   ├── postgres.ts       # dokku postgres:* (create, backup, export)
+│   │   ├── redis.ts          # dokku redis:* (create, export)
+│   │   ├── links.ts          # Service link resolution across plugins
 │   │   └── storage.ts        # dokku storage:*
 │   ├── commands/
 │   │   ├── up.ts             # up command orchestration
@@ -546,7 +584,7 @@ bun install
 bun test
 
 # Run a specific module's tests
-bun test src/modules/services.test.ts
+bun test src/modules/postgres.test.ts
 ```
 
 Tests use [Bun's test runner](https://bun.sh/docs/cli/test) with a mocked `Runner` — no real Dokku server needed.

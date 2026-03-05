@@ -1,8 +1,8 @@
-# Plugins and Services
+# Plugins
 
 Dokku docs: https://dokku.com/docs/advanced-usage/plugin-management/
 
-Modules: `lib/plugins.sh`, `lib/services.sh`
+Module: `src/modules/plugins.ts`
 
 ## YAML Keys
 
@@ -32,57 +32,9 @@ plugins:
 
 **`version`** (optional) — Pin the plugin to a specific git tag, branch, or commit. When the installed version differs from the declared version, `plugin:update` is called automatically. When absent, the installed plugin is left as-is.
 
-### Postgres Services (`postgres.<name>`)
-
-Declare Postgres service instances to create. Each service has a unique name. Services are created before apps during `up`, so they are ready to be linked.
-
-```yaml
-postgres:
-  api-postgres:
-    version: "17-3.5"        # optional: POSTGRES_IMAGE_VERSION
-    image: postgis/postgis   # optional: POSTGRES_IMAGE (custom image)
-    backup:                  # optional: automated backup config
-      schedule: "0 * * * *"
-      bucket: "db-backups/api-postgres"
-      auth:
-        access_key_id: "${R2_ACCESS_KEY_ID}"
-        secret_access_key: "${R2_SECRET_ACCESS_KEY}"
-        region: "auto"
-        signature_version: "s3v4"
-        endpoint: "${R2_SCHEME}://${R2_HOST}"
-```
-
-| Key | Dokku Command |
-|-----|---------------|
-| `version` | `postgres:create <name> -I <version>` |
-| `image` | `postgres:create <name> -i <image>` |
-| `backup.schedule` | `postgres:backup-schedule-cat <name>` |
-| `backup.bucket` | `postgres:backup-set-bucket <name> <bucket>` |
-| `backup.auth.*` | `postgres:backup-auth <name> ...` |
-
-Service creation is idempotent — if the service already exists, it is skipped.
-
-### Redis Services (`redis.<name>`)
-
-Declare Redis service instances to create. Each service has a unique name. Services are created before apps during `up`, so they are ready to be linked.
-
-```yaml
-redis:
-  api-redis: {}              # default version
-
-  shared-cache:
-    version: "7.2-alpine"   # optional: REDIS_IMAGE_VERSION
-```
-
-| Key | Dokku Command |
-|-----|---------------|
-| `version` | `redis:create <name> -I <version>` |
-
-Service creation is idempotent — if the service already exists, it is skipped.
-
 ### Linking Services to Apps (`apps.<app>.links`)
 
-Attach services to an app. Dokku injects the service connection URL as an environment variable when a service is linked.
+Attach postgres or redis services to an app. Dokku injects the service connection URL as an environment variable when a service is linked. Service names reference entries from the top-level `postgres:` or `redis:` keys.
 
 ```yaml
 apps:
